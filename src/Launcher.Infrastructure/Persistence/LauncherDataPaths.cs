@@ -14,4 +14,9 @@ public sealed class LauncherDataPaths
     public string SettingsFile => Path.Combine(RootDirectory, "settings.json");
 
     public string LogsDirectory => Path.Combine(RootDirectory, "logs");
+
+    public string InstancesDirectory => Path.Combine(RootDirectory, "instances");
+
+    public string GetInstanceDirectory(string validatedProfileId) =>
+        Path.Combine(InstancesDirectory, validatedProfileId);
 }

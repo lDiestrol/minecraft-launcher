@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Launcher.App.ViewModels;
 using Launcher.Core.Services;
+using Launcher.Infrastructure.Game;
 using Launcher.Infrastructure.Http;
 using Launcher.Infrastructure.Logging;
 using Launcher.Infrastructure.Persistence;
@@ -13,6 +14,7 @@ namespace Launcher.App;
 public partial class App : Application
 {
     private HttpClient? _httpClient;
+    private HttpClient? _gameHttpClient;
     private IAppLogger? _logger;
 
     protected override async void OnStartup(StartupEventArgs e)
@@ -21,7 +23,7 @@ public partial class App : Application
 
         LauncherDataPaths paths = new();
         _logger = new FileAppLogger(paths);
-        _logger.Info("Minecraft Launcher 0.1.0-dev starting.");
+        _logger.Info("Minecraft Launcher 0.2.0-dev starting.");
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
@@ -32,12 +34,21 @@ public partial class App : Application
             {
                 Timeout = TimeSpan.FromSeconds(10),
             };
-            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("MinecraftLauncher/0.1.0-dev");
+            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("MinecraftLauncher/0.2.0-dev");
+
+            _gameHttpClient = new HttpClient
+            {
+                Timeout = TimeSpan.FromMinutes(10),
+            };
+            _gameHttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("MinecraftLauncher/0.2.0-dev");
+
+            CmlLibGameLaunchService gameLaunchService = new(_gameHttpClient, paths, _logger);
 
             MainViewModel viewModel = new(
                 new LauncherServerClient(_httpClient, _logger),
                 new JsonSettingsStore(paths, _logger),
                 new WindowsSystemMemoryProvider(),
+                new GameLaunchCoordinator(gameLaunchService),
                 _logger);
 
             await viewModel.InitializeAsync();
@@ -66,6 +77,7 @@ public partial class App : Application
     {
         _logger?.Info("Minecraft Launcher stopped.");
         _httpClient?.Dispose();
+        _gameHttpClient?.Dispose();
         base.OnExit(e);
     }
 

@@ -167,6 +167,19 @@ public sealed class LauncherServerClientTests
             () => client.GetProfilesAsync(Bootstrap(), CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData("../escape")]
+    [InlineData("folder/profile")]
+    [InlineData("folder\\profile")]
+    public async Task GetProfilesAsync_RejectsUnsafeProfileId(string profileId)
+    {
+        string json = ValidProfilesJson.Replace("\"id\": \"main\"", $"\"id\": \"{profileId.Replace("\\", "\\\\", StringComparison.Ordinal)}\"", StringComparison.Ordinal);
+        LauncherServerClient client = CreateClient(Json(json));
+
+        await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetProfilesAsync(Bootstrap(), CancellationToken.None));
+    }
+
     [Fact]
     public async Task GetProfilesAsync_RejectsUnknownLengthResponseAboveOneMegabyte()
     {

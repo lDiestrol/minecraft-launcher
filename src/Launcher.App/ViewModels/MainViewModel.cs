@@ -12,6 +12,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly ILauncherServerClient _serverClient;
     private readonly ISettingsStore _settingsStore;
     private readonly ISystemMemoryProvider _memoryProvider;
+    private readonly GameLaunchCoordinator _gameLaunchCoordinator;
     private readonly IAppLogger _logger;
     private readonly SemaphoreSlim _saveLock = new(1, 1);
     private LauncherSettings _settings = new();
@@ -28,31 +29,43 @@ public sealed class MainViewModel : ObservableObject
     private string? _errorText;
     private bool _isBusy;
     private bool _isChangingServer;
+    private bool _isGamePreparing;
+    private bool _isGameRunning;
+    private bool _isProgressIndeterminate = true;
+    private double _progressValue;
+    private string _progressDetails = string.Empty;
+    private string _playButtonText = "ИГРАТЬ";
+    private CancellationTokenSource? _gameLaunchCancellation;
 
     public MainViewModel(
         ILauncherServerClient serverClient,
         ISettingsStore settingsStore,
         ISystemMemoryProvider memoryProvider,
+        GameLaunchCoordinator gameLaunchCoordinator,
         IAppLogger logger)
     {
         _serverClient = serverClient;
         _settingsStore = settingsStore;
         _memoryProvider = memoryProvider;
+        _gameLaunchCoordinator = gameLaunchCoordinator;
         _logger = logger;
 
         ConnectCommand = new AsyncRelayCommand(ConnectAsync, () => !IsBusy);
-        PlayCommand = new RelayCommand(Play, () => !IsBusy);
+        PlayCommand = new AsyncRelayCommand(PlayAsync, () => !IsBusy);
+        CancelGameCommand = new RelayCommand(CancelGame, () => IsGamePreparing);
         OpenSettingsCommand = new RelayCommand(OpenSettings, () => !IsBusy);
         CancelSettingsCommand = new RelayCommand(CancelSettings, () => !IsBusy);
     }
 
-    public string Version => "0.1.0-dev";
+    public string Version => "0.2.0-dev";
 
     public ObservableCollection<GameProfile> Profiles { get; } = [];
 
     public AsyncRelayCommand ConnectCommand { get; }
 
-    public RelayCommand PlayCommand { get; }
+    public AsyncRelayCommand PlayCommand { get; }
+
+    public RelayCommand CancelGameCommand { get; }
 
     public RelayCommand OpenSettingsCommand { get; }
 
@@ -168,6 +181,56 @@ public sealed class MainViewModel : ObservableObject
                 OnPropertyChanged(nameof(OnboardingDescription));
             }
         }
+    }
+
+    public bool IsGamePreparing
+    {
+        get => _isGamePreparing;
+        private set
+        {
+            if (SetProperty(ref _isGamePreparing, value))
+            {
+                CancelGameCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool IsGameRunning
+    {
+        get => _isGameRunning;
+        private set => SetProperty(ref _isGameRunning, value);
+    }
+
+    public bool IsProgressIndeterminate
+    {
+        get => _isProgressIndeterminate;
+        private set => SetProperty(ref _isProgressIndeterminate, value);
+    }
+
+    public double ProgressValue
+    {
+        get => _progressValue;
+        private set => SetProperty(ref _progressValue, value);
+    }
+
+    public string ProgressDetails
+    {
+        get => _progressDetails;
+        private set
+        {
+            if (SetProperty(ref _progressDetails, value))
+            {
+                OnPropertyChanged(nameof(HasProgressDetails));
+            }
+        }
+    }
+
+    public bool HasProgressDetails => !string.IsNullOrWhiteSpace(ProgressDetails);
+
+    public string PlayButtonText
+    {
+        get => _playButtonText;
+        private set => SetProperty(ref _playButtonText, value);
     }
 
     public string OnboardingTitle => IsChangingServer ? "Настройки сервера" : "Добро пожаловать";
@@ -304,7 +367,7 @@ public sealed class MainViewModel : ObservableObject
         StatusText = "Готово";
     }
 
-    private void Play()
+    private async Task PlayAsync()
     {
         ErrorText = null;
         if (_bootstrap is null)
@@ -325,10 +388,132 @@ public sealed class MainViewModel : ObservableObject
         }
         else
         {
-            StatusText = "Запуск Minecraft будет реализован на следующем этапе.";
+            GameLaunchRequest request;
+            try
+            {
+                request = GameLaunchRequestFactory.Create(SelectedProfile, Nickname, RamMb);
+            }
+            catch (GameLaunchException exception)
+            {
+                ErrorText = exception.UserMessage;
+                StatusText = "Ошибка";
+                return;
+            }
+
             ScheduleSettingsSave();
+            IsBusy = true;
+            IsGamePreparing = true;
+            IsGameRunning = false;
+            IsProgressIndeterminate = true;
+            ProgressValue = 0;
+            ProgressDetails = string.Empty;
+            PlayButtonText = "ПОДГОТОВКА...";
+            _gameLaunchCancellation = new CancellationTokenSource();
+            Progress<GameLaunchProgress> progress = new(UpdateGameProgress);
+
+            try
+            {
+                GameLaunchResult result = await _gameLaunchCoordinator.LaunchAsync(
+                    request,
+                    progress,
+                    _gameLaunchCancellation.Token);
+
+                if (result.ExitCode == 0)
+                {
+                    StatusText = "Minecraft завершён";
+                }
+                else
+                {
+                    StatusText = "Minecraft завершился с ошибкой";
+                    ErrorText = $"Код завершения: {result.ExitCode}. Подробности записаны в лог.";
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                StatusText = "Подготовка Minecraft отменена";
+                ProgressDetails = string.Empty;
+            }
+            catch (GameLaunchException exception)
+            {
+                _logger.Error(exception.Message, exception);
+                StatusText = "Ошибка";
+                ErrorText = exception.UserMessage;
+            }
+            catch (Exception exception)
+            {
+                _logger.Error("Unexpected game launch failure.", exception);
+                StatusText = "Ошибка";
+                ErrorText = "Не удалось подготовить или запустить Minecraft. Подробности записаны в лог.";
+            }
+            finally
+            {
+                _gameLaunchCancellation.Dispose();
+                _gameLaunchCancellation = null;
+                IsGamePreparing = false;
+                IsGameRunning = false;
+                IsProgressIndeterminate = true;
+                PlayButtonText = "ИГРАТЬ";
+                IsBusy = false;
+            }
         }
     }
+
+    private void CancelGame()
+    {
+        if (!IsGamePreparing || _gameLaunchCancellation is null)
+        {
+            return;
+        }
+
+        StatusText = "Отмена подготовки...";
+        CancelGameCommand.RaiseCanExecuteChanged();
+        _gameLaunchCancellation.Cancel();
+    }
+
+    private void UpdateGameProgress(GameLaunchProgress progress)
+    {
+        StatusText = progress.Message;
+        if (progress.Percentage is double percentage)
+        {
+            IsProgressIndeterminate = false;
+            ProgressValue = percentage;
+        }
+        else
+        {
+            IsProgressIndeterminate = progress.Stage is not GameLaunchStage.MinecraftStarted;
+        }
+
+        ProgressDetails = FormatProgressDetails(progress);
+
+        if (progress.Stage == GameLaunchStage.MinecraftStarted)
+        {
+            IsGamePreparing = false;
+            IsGameRunning = true;
+            PlayButtonText = "MINECRAFT ЗАПУЩЕН";
+            ProgressValue = 100;
+        }
+        else if (progress.Stage == GameLaunchStage.MinecraftExited)
+        {
+            IsGameRunning = false;
+        }
+    }
+
+    private static string FormatProgressDetails(GameLaunchProgress progress)
+    {
+        if (progress.TotalBytes > 0 && progress.CompletedBytes is long completedBytes)
+        {
+            return $"{FormatBytes(completedBytes)} / {FormatBytes(progress.TotalBytes.Value)}";
+        }
+
+        if (progress.TotalFiles > 0 && progress.CompletedFiles is int completedFiles)
+        {
+            return $"{completedFiles} / {progress.TotalFiles.Value} файлов";
+        }
+
+        return progress.ProcessId is int processId ? $"PID: {processId}" : string.Empty;
+    }
+
+    private static string FormatBytes(long bytes) => $"{bytes / 1024d / 1024d:0.#} MB";
 
     private void ScheduleSettingsSave()
     {

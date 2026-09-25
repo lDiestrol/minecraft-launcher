@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Launcher.Core.Models;
 using Launcher.Core.Services;
+using Launcher.Core.Validation;
 
 namespace Launcher.Infrastructure.Http;
 
@@ -233,15 +234,15 @@ public sealed class LauncherServerClient : ILauncherServerClient
 
     private static GameProfile MapProfile(ProfileDto profile, Uri profilesUri)
     {
-        if (string.IsNullOrWhiteSpace(profile.Id) ||
+        if (!ProfileValueValidator.IsValidProfileId(profile.Id) ||
             string.IsNullOrWhiteSpace(profile.Name) ||
-            string.IsNullOrWhiteSpace(profile.MinecraftVersion) ||
+            !ProfileValueValidator.IsValidVersion(profile.MinecraftVersion) ||
             profile.Loader is null ||
             string.IsNullOrWhiteSpace(profile.Loader.Type) ||
-            string.IsNullOrWhiteSpace(profile.Loader.Version) ||
+            !ProfileValueValidator.IsValidVersion(profile.Loader.Version) ||
             string.IsNullOrWhiteSpace(profile.PackVersion) ||
             string.IsNullOrWhiteSpace(profile.ManifestUrl) ||
-            string.IsNullOrWhiteSpace(profile.ServerAddress) ||
+            !ProfileValueValidator.IsValidServerAddress(profile.ServerAddress) ||
             profile.ServerPort is < 1 or > 65535)
         {
             throw InvalidConfiguration("profiles.json содержит неполное или некорректное описание сборки.");
