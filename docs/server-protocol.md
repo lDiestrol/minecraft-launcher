@@ -1,6 +1,6 @@
 # Server Protocol v1
 
-Этот документ задаёт статический HTTP-контракт между Launcher MVP-1 и будущим nginx/static hosting/server implementation.
+Этот документ задаёт статический HTTP-контракт между Launcher MVP-2 и будущим nginx/static hosting/server implementation.
 
 ## Входной URL и нормализация
 
@@ -73,7 +73,9 @@ Launcher принимает:
 
 `profiles` должен содержать хотя бы один полностью корректный элемент. Для каждого элемента обязательны непустые `id`, `name`, `minecraftVersion`, `loader.type`, `loader.version`, `packVersion`, `manifestUrl`, `serverAddress` и `serverPort` в диапазоне 1–65535. Profile IDs уникальны без учёта регистра.
 
-`manifestUrl` сохраняется в модели для следующего этапа, но manifest в MVP-1 не загружается. Относительный URL разрешается относительно фактического `profiles.json`; абсолютный URL поддерживается с теми же HTTPS/loopback правилами.
+`id` содержит от 1 до 64 ASCII-букв, цифр, `-` или `_`; Windows device names (`CON`, `NUL`, `COM1` и аналогичные) запрещены. `minecraftVersion` и `loader.version` содержат не более 64 безопасных символов версии и не допускают path separators. В MVP-2 исполняется только `loader.type = "fabric"`; версия loader используется точно как передана, без автоматической замены на `latest`.
+
+`manifestUrl` сохраняется в модели для следующего этапа, но manifest в MVP-2 не загружается. Относительный URL разрешается относительно фактического `profiles.json`; абсолютный URL поддерживается с теми же HTTPS/loopback правилами.
 
 ## Версионирование
 

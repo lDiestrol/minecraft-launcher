@@ -2,7 +2,7 @@
 
 Открытый Windows-лаунчер для Minecraft-серверов с конфигурацией по URL. Пользователь указывает адрес сервера, лаунчер получает `bootstrap.json` и список игровых сборок, после чего сохраняет ник, выбранный профиль и объём RAM.
 
-Проект находится на этапе **MVP-1 (0.1.0-dev)**. Сейчас реализована оболочка и сетевой протокол. Скачивание и запуск Minecraft ещё не реализованы; кнопка «Играть» сообщает об этом явно и не имитирует запуск.
+Проект находится на этапе **MVP-2 development (0.2.0-dev)**. Кнопка «Играть» подготавливает официальные файлы Minecraft и совместимую Mojang Java runtime через CmlLib.Core, устанавливает точную версию Fabric из серверного профиля и запускает клиент с локальным offline nickname.
 
 ## Требования
 
@@ -25,7 +25,7 @@ dotnet run --project src/Launcher.App/Launcher.App.csproj
 
 - `src/Launcher.App` — WPF, ViewModels, команды и composition root;
 - `src/Launcher.Core` — доменные модели, контракты сервисов, URL/nickname validation и RAM policy;
-- `src/Launcher.Infrastructure` — HTTP/JSON, settings, файловые логи и определение физической памяти;
+- `src/Launcher.Infrastructure` — HTTP/JSON, settings, файловые логи, определение физической памяти и интеграция CmlLib.Core;
 - `tests/Launcher.Core.Tests` — unit-тесты Core и инфраструктурных границ без реального интернета;
 - `docs` — архитектура и Server Protocol v1.
 
@@ -83,12 +83,22 @@ https://example.org/launcher/bootstrap.json
 
 - `%LOCALAPPDATA%\MinecraftLauncher\settings.json` — URL сервера, nickname, профиль и RAM;
 - `%LOCALAPPDATA%\MinecraftLauncher\logs\launcher-YYYYMMDD.log` — технический лог.
+- `%LOCALAPPDATA%\MinecraftLauncher\instances\<profile-id>` — изолированные игровые данные профиля;
+- `%LOCALAPPDATA%\MinecraftLauncher\assets`, `libraries`, `versions` и `runtime` — общие проверяемые CmlLib файлы Minecraft и Mojang Java.
 
 Повреждённые, пустые и частичные settings не приводят к падению: применяются безопасные значения по умолчанию.
 
+## Запуск игры
+
+Первый запуск может занять продолжительное время: CmlLib.Core получает официальные metadata и недостающие файлы Minecraft, assets, libraries и подходящую Mojang Java runtime, после чего устанавливает точную версию Fabric Loader из `profiles.json`. UI показывает реальные файловые и byte-progress события; подготовку можно отменить до старта процесса.
+
+При следующих запусках существующие файлы проверяются и переиспользуются. Minecraft получает выбранный объём RAM, offline nickname и адрес/порт сервера. Offline-сессия не обходит Microsoft authentication: она подходит только для серверов, чья конфигурация допускает такой вход.
+
+Подробнее: [docs/game-launch.md](docs/game-launch.md).
+
 ## Текущие ограничения
 
-На этапе MVP-1 намеренно отсутствуют загрузка и запуск Minecraft/Java, установка Fabric, pack manifest и синхронизация модов, Repair, аккаунты Microsoft, собственная регистрация, backend, installer и self-update. CmlLib.Core и Velopack не подключены «на будущее».
+MVP-2 поддерживает только Fabric и offline nickname. Намеренно отсутствуют pack manifest updater, синхронизация mods/config, Repair, Microsoft login, собственная регистрация, backend, installer и self-update. Поля `packVersion` и `manifestUrl` зарезервированы для MVP-3 и сейчас не исполняются.
 
 ## Публичный репозиторий и secrets policy
 
