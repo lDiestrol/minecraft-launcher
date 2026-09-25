@@ -12,7 +12,7 @@ public sealed class LauncherServerClientTests
     private static readonly Uri BootstrapUri = new("https://example.test/launcher/bootstrap.json");
 
     [Fact]
-    public async Task GetBootstrapAsync_ParsesVersionOneAndRelativeProfilesUrl()
+    public async Task GetBootstrapAsync_ParsesOrdinaryResponseBelow256KiB()
     {
         LauncherServerClient client = CreateClient(Json("""
             {
@@ -102,9 +102,9 @@ public sealed class LauncherServerClientTests
     }
 
     [Fact]
-    public async Task GetBootstrapAsync_RejectsContentLengthAboveOneMegabyte()
+    public async Task GetBootstrapAsync_RejectsContentLengthAbove256KiB()
     {
-        LauncherServerClient client = CreateClient(Json(new string('x', 1024 * 1024 + 1)));
+        LauncherServerClient client = CreateClient(Json(new string('x', 256 * 1024 + 1)));
 
         ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
             () => client.GetBootstrapAsync(BootstrapUri, CancellationToken.None));
@@ -113,7 +113,7 @@ public sealed class LauncherServerClientTests
     }
 
     [Fact]
-    public async Task GetProfilesAsync_ParsesValidProfileAndResolvesManifestUrl()
+    public async Task GetProfilesAsync_ParsesOrdinaryResponseBelowOneMegabyte()
     {
         LauncherServerClient client = CreateClient(Json(ValidProfilesJson));
 
@@ -175,6 +175,17 @@ public sealed class LauncherServerClientTests
             Content = new UnknownLengthContent(new byte[1024 * 1024 + 1]),
         };
         LauncherServerClient client = CreateClient(response);
+
+        ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetProfilesAsync(Bootstrap(), CancellationToken.None));
+
+        Assert.Contains("слишком большой", exception.UserMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetProfilesAsync_RejectsContentLengthAboveOneMegabyte()
+    {
+        LauncherServerClient client = CreateClient(Json(new string('x', 1024 * 1024 + 1)));
 
         ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
             () => client.GetProfilesAsync(Bootstrap(), CancellationToken.None));

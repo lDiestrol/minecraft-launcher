@@ -9,7 +9,8 @@ namespace Launcher.Infrastructure.Http;
 public sealed class LauncherServerClient : ILauncherServerClient
 {
     private const int SupportedSchemaVersion = 1;
-    private const int MaximumConfigurationBytes = 1024 * 1024;
+    private const int MaximumBootstrapBytes = 256 * 1024;
+    private const int MaximumProfilesBytes = 1024 * 1024;
     private readonly HttpClient _httpClient;
     private readonly IAppLogger _logger;
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
@@ -24,7 +25,11 @@ public sealed class LauncherServerClient : ILauncherServerClient
         Uri bootstrapUri,
         CancellationToken cancellationToken)
     {
-        string json = await DownloadStringAsync(bootstrapUri, "bootstrap.json", cancellationToken);
+        string json = await DownloadStringAsync(
+            bootstrapUri,
+            "bootstrap.json",
+            MaximumBootstrapBytes,
+            cancellationToken);
 
         try
         {
@@ -71,7 +76,11 @@ public sealed class LauncherServerClient : ILauncherServerClient
         BootstrapConfiguration bootstrap,
         CancellationToken cancellationToken)
     {
-        string json = await DownloadStringAsync(bootstrap.ProfilesUri, "profiles.json", cancellationToken);
+        string json = await DownloadStringAsync(
+            bootstrap.ProfilesUri,
+            "profiles.json",
+            MaximumProfilesBytes,
+            cancellationToken);
 
         try
         {
@@ -115,6 +124,7 @@ public sealed class LauncherServerClient : ILauncherServerClient
     private async Task<string> DownloadStringAsync(
         Uri uri,
         string documentName,
+        int maximumBytes,
         CancellationToken cancellationToken)
     {
         try
@@ -137,6 +147,7 @@ public sealed class LauncherServerClient : ILauncherServerClient
                 response.Content,
                 uri,
                 documentName,
+                maximumBytes,
                 cancellationToken);
             if (string.IsNullOrWhiteSpace(content))
             {
@@ -173,11 +184,12 @@ public sealed class LauncherServerClient : ILauncherServerClient
         HttpContent content,
         Uri uri,
         string documentName,
+        int maximumBytes,
         CancellationToken cancellationToken)
     {
-        if (content.Headers.ContentLength > MaximumConfigurationBytes)
+        if (content.Headers.ContentLength > maximumBytes)
         {
-            throw ConfigurationTooLarge(uri, documentName, content.Headers.ContentLength.Value);
+            throw ConfigurationTooLarge(uri, documentName, maximumBytes, content.Headers.ContentLength.Value);
         }
 
         await using Stream source = await content.ReadAsStreamAsync(cancellationToken);
@@ -194,9 +206,9 @@ public sealed class LauncherServerClient : ILauncherServerClient
             }
 
             totalBytes += bytesRead;
-            if (totalBytes > MaximumConfigurationBytes)
+            if (totalBytes > maximumBytes)
             {
-                throw ConfigurationTooLarge(uri, documentName, totalBytes);
+                throw ConfigurationTooLarge(uri, documentName, maximumBytes, totalBytes);
             }
 
             await destination.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
@@ -205,14 +217,18 @@ public sealed class LauncherServerClient : ILauncherServerClient
         return Encoding.UTF8.GetString(destination.GetBuffer(), 0, totalBytes);
     }
 
-    private ServerConnectionException ConfigurationTooLarge(Uri uri, string documentName, long receivedBytes)
+    private ServerConnectionException ConfigurationTooLarge(
+        Uri uri,
+        string documentName,
+        int maximumBytes,
+        long receivedBytes)
     {
         _logger.Error(
-            $"Response for {uri} exceeds the {MaximumConfigurationBytes}-byte limit " +
+            $"Response for {uri} exceeds the {maximumBytes}-byte limit " +
             $"(reported or received: {receivedBytes} bytes).");
         return new ServerConnectionException(
             $"Файл {documentName} слишком большой.",
-            $"Response for {uri} exceeds the {MaximumConfigurationBytes}-byte limit.");
+            $"Response for {uri} exceeds the {maximumBytes}-byte limit.");
     }
 
     private static GameProfile MapProfile(ProfileDto profile, Uri profilesUri)
