@@ -102,6 +102,17 @@ public sealed class LauncherServerClientTests
     }
 
     [Fact]
+    public async Task GetBootstrapAsync_RejectsContentLengthAboveOneMegabyte()
+    {
+        LauncherServerClient client = CreateClient(Json(new string('x', 1024 * 1024 + 1)));
+
+        ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetBootstrapAsync(BootstrapUri, CancellationToken.None));
+
+        Assert.Contains("слишком большой", exception.UserMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task GetProfilesAsync_ParsesValidProfileAndResolvesManifestUrl()
     {
         LauncherServerClient client = CreateClient(Json(ValidProfilesJson));
@@ -154,6 +165,21 @@ public sealed class LauncherServerClientTests
 
         await Assert.ThrowsAsync<ServerConnectionException>(
             () => client.GetProfilesAsync(Bootstrap(), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetProfilesAsync_RejectsUnknownLengthResponseAboveOneMegabyte()
+    {
+        HttpResponseMessage response = new(HttpStatusCode.OK)
+        {
+            Content = new UnknownLengthContent(new byte[1024 * 1024 + 1]),
+        };
+        LauncherServerClient client = CreateClient(response);
+
+        ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetProfilesAsync(Bootstrap(), CancellationToken.None));
+
+        Assert.Contains("слишком большой", exception.UserMessage, StringComparison.Ordinal);
     }
 
     private static BootstrapConfiguration Bootstrap() => new(
@@ -232,5 +258,24 @@ public sealed class LauncherServerClientTests
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken) => Task.FromResult(_response);
+    }
+
+    private sealed class UnknownLengthContent : HttpContent
+    {
+        private readonly byte[] _content;
+
+        public UnknownLengthContent(byte[] content)
+        {
+            _content = content;
+        }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            stream.WriteAsync(_content, 0, _content.Length);
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
     }
 }

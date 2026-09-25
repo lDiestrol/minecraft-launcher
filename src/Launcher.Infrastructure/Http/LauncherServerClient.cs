@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using Launcher.Core.Models;
 using Launcher.Core.Services;
@@ -8,6 +9,7 @@ namespace Launcher.Infrastructure.Http;
 public sealed class LauncherServerClient : ILauncherServerClient
 {
     private const int SupportedSchemaVersion = 1;
+    private const int MaximumConfigurationBytes = 1024 * 1024;
     private readonly HttpClient _httpClient;
     private readonly IAppLogger _logger;
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
@@ -131,7 +133,11 @@ public sealed class LauncherServerClient : ILauncherServerClient
                     $"HTTP {(int)response.StatusCode} while requesting {uri}.");
             }
 
-            string content = await response.Content.ReadAsStringAsync(cancellationToken);
+            string content = await ReadLimitedContentAsync(
+                response.Content,
+                uri,
+                documentName,
+                cancellationToken);
             if (string.IsNullOrWhiteSpace(content))
             {
                 throw new ServerConnectionException(
@@ -161,6 +167,52 @@ public sealed class LauncherServerClient : ILauncherServerClient
                 $"HTTP request failed for {uri}.",
                 exception);
         }
+    }
+
+    private async Task<string> ReadLimitedContentAsync(
+        HttpContent content,
+        Uri uri,
+        string documentName,
+        CancellationToken cancellationToken)
+    {
+        if (content.Headers.ContentLength > MaximumConfigurationBytes)
+        {
+            throw ConfigurationTooLarge(uri, documentName, content.Headers.ContentLength.Value);
+        }
+
+        await using Stream source = await content.ReadAsStreamAsync(cancellationToken);
+        using MemoryStream destination = new();
+        byte[] buffer = new byte[16 * 1024];
+        int totalBytes = 0;
+
+        while (true)
+        {
+            int bytesRead = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+            if (bytesRead == 0)
+            {
+                break;
+            }
+
+            totalBytes += bytesRead;
+            if (totalBytes > MaximumConfigurationBytes)
+            {
+                throw ConfigurationTooLarge(uri, documentName, totalBytes);
+            }
+
+            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+        }
+
+        return Encoding.UTF8.GetString(destination.GetBuffer(), 0, totalBytes);
+    }
+
+    private ServerConnectionException ConfigurationTooLarge(Uri uri, string documentName, long receivedBytes)
+    {
+        _logger.Error(
+            $"Response for {uri} exceeds the {MaximumConfigurationBytes}-byte limit " +
+            $"(reported or received: {receivedBytes} bytes).");
+        return new ServerConnectionException(
+            $"Файл {documentName} слишком большой.",
+            $"Response for {uri} exceeds the {MaximumConfigurationBytes}-byte limit.");
     }
 
     private static GameProfile MapProfile(ProfileDto profile, Uri profilesUri)

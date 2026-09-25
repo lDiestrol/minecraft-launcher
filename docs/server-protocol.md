@@ -84,3 +84,5 @@ Launcher принимает:
 Endpoints должны возвращать успешный HTTP status и непустой JSON с media type `application/json` (дополнительные JSON media types допустимы, поскольку содержимое разбирается как JSON).
 
 Launcher обрабатывает timeout, DNS/connection/TLS failures, HTTP 4xx/5xx, пустой ответ, malformed JSON, неизвестную schema и malformed profiles без падения. Технические сведения записываются в локальный лог, пользователю показывается короткое сообщение. Настройки нового сервера сохраняются только после успешной проверки обоих документов.
+
+Размер каждого ответа `bootstrap.json` и `profiles.json` ограничен 1 MiB. Ответ с большим `Content-Length` отклоняется до чтения body; для chunked-ответа лимит контролируется во время потокового чтения.
