@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore MinecraftLauncher.sln
+
+      - name: Build
+        run: dotnet build MinecraftLauncher.sln --no-restore
+
+      - name: Test
+        run: dotnet test MinecraftLauncher.sln --no-build --no-restore
+
+      - name: Verify formatting
+        run: dotnet format MinecraftLauncher.sln --verify-no-changes --no-restore
