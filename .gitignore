@@ -1,0 +1,30 @@
+# .NET build output
+bin/
+obj/
+artifacts/
+
+# IDE and user state
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local development configuration and secrets
+launcher.local.json
+secrets.json
+*.secrets.json
+*.pfx
+*.p12
+*.snk
+*.key
+*.pem
+
+# Temporary and logs
+*.tmp
+*.temp
+*.log
+TestResults/
+coverage/
