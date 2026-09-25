@@ -150,8 +150,7 @@ public sealed class LauncherServerClientTests
     [Fact]
     public async Task GetProfilesAsync_RejectsDuplicateProfileIds()
     {
-        string duplicateJson = ValidProfilesJson.Replace("]\n}", ",\n" + ValidProfileObject + "]\n}", StringComparison.Ordinal);
-        LauncherServerClient client = CreateClient(Json(duplicateJson));
+        LauncherServerClient client = CreateClient(Json(DuplicateProfilesJson));
 
         await Assert.ThrowsAsync<ServerConnectionException>(
             () => client.GetProfilesAsync(Bootstrap(), CancellationToken.None));
@@ -193,16 +192,31 @@ public sealed class LauncherServerClientTests
         }
         """;
 
-    private const string ValidProfileObject = """
+    private const string DuplicateProfilesJson = """
         {
-          "id": "main",
-          "name": "Duplicate",
-          "minecraftVersion": "1.20.1",
-          "loader": {"type": "fabric", "version": "0.16.14"},
-          "packVersion": "1.0.0",
-          "manifestUrl": "/manifest.json",
-          "serverAddress": "mc.example.test",
-          "serverPort": 25565
+          "schemaVersion": 1,
+          "profiles": [
+            {
+              "id": "main",
+              "name": "First",
+              "minecraftVersion": "1.20.1",
+              "loader": {"type": "fabric", "version": "0.16.14"},
+              "packVersion": "1.0.0",
+              "manifestUrl": "/first.json",
+              "serverAddress": "mc.example.test",
+              "serverPort": 25565
+            },
+            {
+              "id": "MAIN",
+              "name": "Duplicate",
+              "minecraftVersion": "1.20.1",
+              "loader": {"type": "fabric", "version": "0.16.14"},
+              "packVersion": "1.0.0",
+              "manifestUrl": "/duplicate.json",
+              "serverAddress": "mc.example.test",
+              "serverPort": 25565
+            }
+          ]
         }
         """;
 
