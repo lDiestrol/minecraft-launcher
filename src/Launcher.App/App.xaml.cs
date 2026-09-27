@@ -30,7 +30,10 @@ public partial class App : Application
 
         try
         {
-            _httpClient = new HttpClient
+            _httpClient = new HttpClient(new HttpClientHandler
+            {
+                AllowAutoRedirect = false,
+            })
             {
                 Timeout = TimeSpan.FromSeconds(10),
             };
