@@ -308,9 +308,9 @@
                     Command="{Binding OpenSettingsCommand}"
                     Content="Настройки" />
             <Button Grid.Column="1"
-                    IsEnabled="False"
-                    Content="Проверить файлы"
-                    ToolTip="Проверка игровых файлов будет реализована на следующем этапе." />
+                    Command="{Binding RepairCommand}"
+                    Content="Проверить / восстановить"
+                    ToolTip="Проверить SHA-256 и восстановить managed-файлы сборки." />
         </Grid>
     </Grid>
     </Grid>

@@ -129,7 +129,7 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
                 ServerIp = request.ServerAddress,
                 ServerPort = request.ServerPort,
                 GameLauncherName = "MinecraftLauncher",
-                GameLauncherVersion = "0.2.0-dev",
+                GameLauncherVersion = "0.3.0-dev",
             };
 
             using Process process = await launcher.BuildProcessAsync(

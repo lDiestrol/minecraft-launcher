@@ -12,7 +12,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly ILauncherServerClient _serverClient;
     private readonly ISettingsStore _settingsStore;
     private readonly ISystemMemoryProvider _memoryProvider;
-    private readonly GameLaunchCoordinator _gameLaunchCoordinator;
+    private readonly LauncherOperationCoordinator _operationCoordinator;
     private readonly IAppLogger _logger;
     private readonly SemaphoreSlim _saveLock = new(1, 1);
     private LauncherSettings _settings = new();
@@ -41,29 +41,34 @@ public sealed class MainViewModel : ObservableObject
         ILauncherServerClient serverClient,
         ISettingsStore settingsStore,
         ISystemMemoryProvider memoryProvider,
-        GameLaunchCoordinator gameLaunchCoordinator,
+        LauncherOperationCoordinator operationCoordinator,
         IAppLogger logger)
     {
         _serverClient = serverClient;
         _settingsStore = settingsStore;
         _memoryProvider = memoryProvider;
-        _gameLaunchCoordinator = gameLaunchCoordinator;
+        _operationCoordinator = operationCoordinator;
         _logger = logger;
 
         ConnectCommand = new AsyncRelayCommand(ConnectAsync, () => !IsBusy);
         PlayCommand = new AsyncRelayCommand(PlayAsync, () => !IsBusy);
+        RepairCommand = new AsyncRelayCommand(
+            RepairAsync,
+            () => !IsBusy && _bootstrap is not null && SelectedProfile is not null);
         CancelGameCommand = new RelayCommand(CancelGame, () => IsGamePreparing);
         OpenSettingsCommand = new RelayCommand(OpenSettings, () => !IsBusy);
         CancelSettingsCommand = new RelayCommand(CancelSettings, () => !IsBusy);
     }
 
-    public string Version => "0.2.0-dev";
+    public string Version => "0.3.0-dev";
 
     public ObservableCollection<GameProfile> Profiles { get; } = [];
 
     public AsyncRelayCommand ConnectCommand { get; }
 
     public AsyncRelayCommand PlayCommand { get; }
+
+    public AsyncRelayCommand RepairCommand { get; }
 
     public RelayCommand CancelGameCommand { get; }
 
@@ -108,6 +113,7 @@ public sealed class MainViewModel : ObservableObject
         {
             if (SetProperty(ref _selectedProfile, value))
             {
+                RepairCommand.RaiseCanExecuteChanged();
                 ScheduleSettingsSave();
             }
         }
@@ -164,6 +170,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 ConnectCommand.RaiseCanExecuteChanged();
                 PlayCommand.RaiseCanExecuteChanged();
+                RepairCommand.RaiseCanExecuteChanged();
                 OpenSettingsCommand.RaiseCanExecuteChanged();
                 CancelSettingsCommand.RaiseCanExecuteChanged();
             }
@@ -388,10 +395,11 @@ public sealed class MainViewModel : ObservableObject
         }
         else
         {
+            GameProfile selectedProfile = SelectedProfile;
             GameLaunchRequest request;
             try
             {
-                request = GameLaunchRequestFactory.Create(SelectedProfile, Nickname, RamMb);
+                request = GameLaunchRequestFactory.Create(selectedProfile, Nickname, RamMb);
             }
             catch (GameLaunchException exception)
             {
@@ -409,14 +417,17 @@ public sealed class MainViewModel : ObservableObject
             ProgressDetails = string.Empty;
             PlayButtonText = "ПОДГОТОВКА...";
             _gameLaunchCancellation = new CancellationTokenSource();
-            Progress<GameLaunchProgress> progress = new(UpdateGameProgress);
+            Progress<PackSyncProgress> packProgress = new(UpdatePackProgress);
+            Progress<GameLaunchProgress> gameProgress = new(UpdateGameProgress);
 
             try
             {
-                GameLaunchResult result = await Task.Run(() =>
-                    _gameLaunchCoordinator.LaunchAsync(
+                (PackSyncResult _, GameLaunchResult result) = await Task.Run(() =>
+                    _operationCoordinator.PlayAsync(
+                        selectedProfile,
                         request,
-                        progress,
+                        packProgress,
+                        gameProgress,
                         _gameLaunchCancellation.Token));
 
                 if (result.ExitCode == 0)
@@ -431,8 +442,14 @@ public sealed class MainViewModel : ObservableObject
             }
             catch (OperationCanceledException)
             {
-                StatusText = "Подготовка Minecraft отменена";
+                StatusText = "Операция отменена";
                 ProgressDetails = string.Empty;
+            }
+            catch (PackSyncException exception)
+            {
+                _logger.Error(exception.Message, exception);
+                StatusText = "Ошибка";
+                ErrorText = exception.UserMessage;
             }
             catch (GameLaunchException exception)
             {
@@ -459,6 +476,68 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    private async Task RepairAsync()
+    {
+        ErrorText = null;
+        if (_bootstrap is null || SelectedProfile is null)
+        {
+            ErrorText = "Сначала подключитесь к серверу и выберите игровую сборку.";
+            return;
+        }
+
+        GameProfile selectedProfile = SelectedProfile;
+        IsBusy = true;
+        IsGamePreparing = true;
+        IsGameRunning = false;
+        IsProgressIndeterminate = true;
+        ProgressValue = 0;
+        ProgressDetails = string.Empty;
+        _gameLaunchCancellation = new CancellationTokenSource();
+        Progress<PackSyncProgress> progress = new(UpdatePackProgress);
+
+        try
+        {
+            PackSyncResult result = await Task.Run(() =>
+                _operationCoordinator.RepairAsync(
+                    selectedProfile,
+                    progress,
+                    _gameLaunchCancellation.Token));
+            if (result.DownloadedFiles == 0 && result.DeletedFiles == 0)
+            {
+                StatusText = "Файлы сборки уже исправны.";
+            }
+            else
+            {
+                StatusText = $"Восстановлено файлов: {result.DownloadedFiles}; удалено устаревших: {result.DeletedFiles}.";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText = "Проверка файлов отменена";
+            ProgressDetails = string.Empty;
+        }
+        catch (PackSyncException exception)
+        {
+            _logger.Error(exception.Message, exception);
+            StatusText = "Ошибка";
+            ErrorText = exception.UserMessage;
+        }
+        catch (Exception exception)
+        {
+            _logger.Error("Unexpected pack repair failure.", exception);
+            StatusText = "Ошибка";
+            ErrorText = "Не удалось проверить файлы сборки. Подробности записаны в лог.";
+        }
+        finally
+        {
+            _gameLaunchCancellation.Dispose();
+            _gameLaunchCancellation = null;
+            IsGamePreparing = false;
+            IsProgressIndeterminate = true;
+            IsBusy = false;
+        }
+    }
+
     private void CancelGame()
     {
         if (!IsGamePreparing || _gameLaunchCancellation is null)
@@ -466,7 +545,7 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
-        StatusText = "Отмена подготовки...";
+        StatusText = "Отмена операции...";
         CancelGameCommand.RaiseCanExecuteChanged();
         _gameLaunchCancellation.Cancel();
     }
@@ -499,6 +578,22 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    private void UpdatePackProgress(PackSyncProgress progress)
+    {
+        StatusText = progress.Message;
+        if (progress.Percentage is double percentage)
+        {
+            IsProgressIndeterminate = false;
+            ProgressValue = percentage;
+        }
+        else
+        {
+            IsProgressIndeterminate = true;
+        }
+
+        ProgressDetails = FormatProgressDetails(progress);
+    }
+
     private static string FormatProgressDetails(GameLaunchProgress progress)
     {
         if (progress.TotalBytes > 0 && progress.CompletedBytes is long completedBytes)
@@ -512,6 +607,21 @@ public sealed class MainViewModel : ObservableObject
         }
 
         return progress.ProcessId is int processId ? $"PID: {processId}" : string.Empty;
+    }
+
+    private static string FormatProgressDetails(PackSyncProgress progress)
+    {
+        if (progress.TotalBytes > 0 && progress.CompletedBytes is long completedBytes)
+        {
+            string files = progress.TotalFiles > 0 && progress.CompletedFiles is int completedFiles
+                ? $"{completedFiles} / {progress.TotalFiles.Value} файлов; "
+                : string.Empty;
+            return $"{files}{FormatBytes(completedBytes)} / {FormatBytes(progress.TotalBytes.Value)}";
+        }
+
+        return progress.TotalFiles > 0 && progress.CompletedFiles is int completed
+            ? $"{completed} / {progress.TotalFiles.Value} файлов"
+            : string.Empty;
     }
 
     private static string FormatBytes(long bytes) => $"{bytes / 1024d / 1024d:0.#} MB";
