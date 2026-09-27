@@ -357,8 +357,7 @@ public sealed class LauncherServerClient : ILauncherServerClient
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static bool IsAllowedEndpoint(Uri uri) =>
-        uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
-        (uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) && uri.IsLoopback);
+        HttpEndpointPolicy.IsAllowed(uri);
 
     private sealed record DownloadedDocument(string Content, Uri FinalUri);
 
