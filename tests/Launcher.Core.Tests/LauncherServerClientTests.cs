@@ -91,6 +91,32 @@ public sealed class LauncherServerClientTests
     }
 
     [Fact]
+    public async Task GetBootstrapAsync_RejectsRemoteHttpRequestAtClientBoundary()
+    {
+        LauncherServerClient client = CreateClient(Json("{}"));
+
+        await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetBootstrapAsync(
+                new Uri("http://example.test/launcher/bootstrap.json"),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetBootstrapAsync_RejectsRedirectToRemoteHttp()
+    {
+        HttpResponseMessage response = Json("""
+            {"schemaVersion":1,"serverName":"Server","profilesUrl":"/profiles.json"}
+            """);
+        response.RequestMessage = new HttpRequestMessage(
+            HttpMethod.Get,
+            "http://example.test/launcher/bootstrap.json");
+        LauncherServerClient client = CreateClient(response);
+
+        await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetBootstrapAsync(BootstrapUri, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task GetBootstrapAsync_MapsNotFoundToFriendlyError()
     {
         LauncherServerClient client = CreateClient(new HttpResponseMessage(HttpStatusCode.NotFound));
@@ -174,6 +200,23 @@ public sealed class LauncherServerClientTests
     public async Task GetProfilesAsync_RejectsUnsafeProfileId(string profileId)
     {
         string json = ValidProfilesJson.Replace("\"id\": \"main\"", $"\"id\": \"{profileId.Replace("\\", "\\\\", StringComparison.Ordinal)}\"", StringComparison.Ordinal);
+        LauncherServerClient client = CreateClient(Json(json));
+
+        await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetProfilesAsync(Bootstrap(), CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("\"javaPath\":\"C:\\\\Java\\\\javaw.exe\"")]
+    [InlineData("\"jvmArgs\":[\"-agentlib:jdwp=transport=dt_socket\"]")]
+    [InlineData("\"executable\":\"https://example.test/java.exe\"")]
+    [InlineData("\"instancePath\":\"C:\\\\Users\\\\Public\"")]
+    public async Task GetProfilesAsync_RejectsUnknownLaunchControlFields(string unknownField)
+    {
+        string json = ValidProfilesJson.Replace(
+            "\"serverPort\": 25565",
+            $"\"serverPort\": 25565, {unknownField}",
+            StringComparison.Ordinal);
         LauncherServerClient client = CreateClient(Json(json));
 
         await Assert.ThrowsAsync<ServerConnectionException>(

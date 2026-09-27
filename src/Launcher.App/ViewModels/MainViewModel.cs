@@ -413,10 +413,11 @@ public sealed class MainViewModel : ObservableObject
 
             try
             {
-                GameLaunchResult result = await _gameLaunchCoordinator.LaunchAsync(
-                    request,
-                    progress,
-                    _gameLaunchCancellation.Token);
+                GameLaunchResult result = await Task.Run(() =>
+                    _gameLaunchCoordinator.LaunchAsync(
+                        request,
+                        progress,
+                        _gameLaunchCancellation.Token));
 
                 if (result.ExitCode == 0)
                 {

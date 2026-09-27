@@ -5,7 +5,7 @@
 1. Выбранный `GameProfile` преобразуется в `GameLaunchRequest`. Проверяются profile id, версии, Fabric, nickname, RAM и server address.
 2. Создаётся `%LOCALAPPDATA%\MinecraftLauncher\instances\<profile-id>` с отдельными `mods`, `config`, `saves`, `screenshots` и игровыми логами.
 3. CmlLib.Core проверяет Minecraft version из профиля и получает недостающие официальные Mojang metadata, client, libraries и assets.
-4. По version metadata CmlLib подготавливает совместимую Mojang Java runtime внутри managed-каталога Launcher. Java из случайного `PATH` не выбирается.
+4. По version metadata CmlLib подготавливает совместимую Mojang Java runtime внутри managed-каталога Launcher. Перед запуском executable повторно проверяется на существование и принадлежность `%LOCALAPPDATA%\MinecraftLauncher\runtime`; Java из случайного `PATH` не выбирается.
 5. Через Fabric metadata проверяется и устанавливается ровно `loader.version` из профиля. `latest` автоматически не подставляется; для запуска используется version id, возвращённый installer.
 6. CmlLib строит процесс с offline session, выбранными Xmx, консервативным Xms, instance path и server address/port.
 7. Launcher запускает процесс через `ProcessWrapper`, фиксирует PID, пишет output с префиксом `[Minecraft]` и ждёт exit code.
@@ -20,7 +20,7 @@ Assets, libraries, versions и Java runtime общие для профилей, 
 
 UI получает реальные file/task и byte-progress события CmlLib. Известный total отображается процентом, количеством файлов или байтами; без total используется indeterminate progress.
 
-Кнопка «Отмена» отменяет поддерживающие `CancellationToken` этапы до старта Minecraft. После старта процесса она исчезает и не используется для принудительного завершения игры. Атомарный guard не позволяет второму Play создать параллельный процесс.
+Кнопка «Отмена» отменяет поддерживающие `CancellationToken` этапы до старта Minecraft. Для Fabric-запросов CmlLib 4.0.6, у которых нет token-overload, Launcher отменяет pending-запрос своего выделенного game `HttpClient` и проверяет token до и после вызова. После старта процесса кнопка исчезает и не используется для принудительного завершения игры. Атомарный guard не позволяет второму Play создать параллельный процесс.
 
 Нулевой exit code возвращает состояние «Minecraft завершён». Ненулевой код показывает короткую ошибку пользователю; полный игровой output и технические исключения остаются в launcher log.
 

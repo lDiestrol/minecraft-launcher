@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Launcher.Core.Models;
 using Launcher.Core.Services;
 using Launcher.Core.Validation;
@@ -14,7 +15,10 @@ public sealed class LauncherServerClient : ILauncherServerClient
     private const int MaximumProfilesBytes = 1024 * 1024;
     private readonly HttpClient _httpClient;
     private readonly IAppLogger _logger;
-    private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
+    private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+    };
 
     public LauncherServerClient(HttpClient httpClient, IAppLogger logger)
     {
@@ -130,11 +134,23 @@ public sealed class LauncherServerClient : ILauncherServerClient
     {
         try
         {
+            if (!uri.IsAbsoluteUri || !IsAllowedEndpoint(uri))
+            {
+                throw InvalidConfiguration($"URL для {documentName} использует запрещённую схему.");
+            }
+
             using HttpRequestMessage request = new(HttpMethod.Get, uri);
             using HttpResponseMessage response = await _httpClient.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
+
+            Uri? responseUri = response.RequestMessage?.RequestUri;
+            if (responseUri is not null && !IsAllowedEndpoint(responseUri))
+            {
+                throw InvalidConfiguration(
+                    $"Перенаправление для {documentName} ведёт на URL с запрещённой схемой.");
+            }
 
             if (!response.IsSuccessStatusCode)
             {

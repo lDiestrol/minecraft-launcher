@@ -17,6 +17,16 @@ public sealed class GameLaunchErrorMapperTests
     }
 
     [Fact]
+    public void Map_MapsHttpTimeoutAsNetworkFailure()
+    {
+        GameLaunchException result = GameLaunchErrorMapper.Map(
+            new TaskCanceledException("timeout"),
+            GameLaunchStage.InstallingFabric);
+
+        Assert.Equal(GameLaunchError.NetworkUnavailable, result.Error);
+    }
+
+    [Fact]
     public void Map_MapsFabricStageFailure()
     {
         GameLaunchException result = GameLaunchErrorMapper.Map(

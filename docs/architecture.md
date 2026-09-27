@@ -53,7 +53,7 @@ server profile
 
 Общие неизменяемые игровые файлы размещаются в `%LOCALAPPDATA%\MinecraftLauncher\assets`, `libraries`, `versions` и `runtime`. Рабочая директория каждого профиля — `%LOCALAPPDATA%\MinecraftLauncher\instances\<profile-id>`. До построения пути profile id валидируется как ограниченный ASCII identifier, а версии не могут содержать path separators.
 
-Установка и проверка выполняются асинхронно с `CancellationToken`. File/task и byte progress CmlLib преобразуются в Core-модель. После старта `ProcessWrapper` передаёт игровой output существующему logger, а Launcher ждёт завершения и обрабатывает exit code. Подробный сценарий описан в [game-launch.md](game-launch.md).
+Установка и проверка выполняются на worker thread с `CancellationToken`, поэтому синхронные участки CmlLib не занимают WPF dispatcher. File/task и byte progress CmlLib преобразуются в Core-модель и возвращаются в UI через `Progress<T>`. После старта `ProcessWrapper` передаёт игровой output существующему logger, а Launcher ждёт завершения, обрабатывает exit code и освобождает process handle. Подробный сценарий описан в [game-launch.md](game-launch.md).
 
 ## Settings и logging
 

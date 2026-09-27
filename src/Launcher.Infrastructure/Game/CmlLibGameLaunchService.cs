@@ -32,6 +32,10 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
         CancellationToken cancellationToken)
     {
         ValidateRequest(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        using CancellationTokenRegistration cancellationRegistration = cancellationToken.Register(
+            static state => ((HttpClient)state!).CancelPendingRequests(),
+            _httpClient);
 
         GameLaunchStage currentStage = GameLaunchStage.Preparing;
         try
@@ -65,17 +69,18 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
             currentStage = GameLaunchStage.PreparingJava;
             Report(progress, currentStage, "Проверка Java runtime");
             IVersion vanillaVersion = await launcher.GetVersionAsync(request.MinecraftVersion, cancellationToken);
-            string vanillaJava = launcher.GetJavaPath(vanillaVersion) ?? throw new GameLaunchException(
-                GameLaunchError.JavaPreparationFailed,
-                "Не удалось подготовить Java для Minecraft.",
-                $"CmlLib did not resolve Java for Minecraft {request.MinecraftVersion}.");
+            string vanillaJava = EnsureManagedJavaExecutable(
+                launcher.GetJavaPath(vanillaVersion),
+                request.MinecraftVersion);
             _logger.Info($"Mojang Java runtime prepared: {vanillaJava}.");
 
             currentStage = GameLaunchStage.InstallingFabric;
             Report(progress, currentStage, $"Установка Fabric {request.LoaderVersion}");
             _logger.Info($"Installing exact Fabric loader {request.LoaderVersion} for {request.MinecraftVersion}.");
             FabricInstaller fabricInstaller = new(_httpClient);
+            cancellationToken.ThrowIfCancellationRequested();
             IReadOnlyCollection<FabricLoader> loaders = await fabricInstaller.GetLoaders(request.MinecraftVersion);
+            cancellationToken.ThrowIfCancellationRequested();
             bool loaderExists = loaders.Any(loader =>
                 request.LoaderVersion.Equals(loader.Version, StringComparison.Ordinal));
             if (!loaderExists)
@@ -106,17 +111,9 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
             currentStage = GameLaunchStage.PreparingJava;
             Report(progress, currentStage, "Подготовка Java для запуска");
             IVersion fabricVersion = await launcher.GetVersionAsync(installedVersionId, cancellationToken);
-            string javaPath = launcher.GetJavaPath(fabricVersion) ?? throw new GameLaunchException(
-                GameLaunchError.JavaPreparationFailed,
-                "Не удалось подготовить Java для Minecraft.",
-                $"CmlLib did not resolve Java for version '{installedVersionId}'.");
-            if (!File.Exists(javaPath))
-            {
-                throw new GameLaunchException(
-                    GameLaunchError.JavaPreparationFailed,
-                    "Подготовленная Java runtime не найдена.",
-                    $"Resolved Java executable does not exist: {javaPath}.");
-            }
+            string javaPath = EnsureManagedJavaExecutable(
+                launcher.GetJavaPath(fabricVersion),
+                installedVersionId);
 
             _logger.Info($"Java executable selected: {javaPath}.");
 
@@ -135,7 +132,10 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
                 GameLauncherVersion = "0.2.0-dev",
             };
 
-            Process process = await launcher.BuildProcessAsync(installedVersionId, launchOption, cancellationToken);
+            using Process process = await launcher.BuildProcessAsync(
+                installedVersionId,
+                launchOption,
+                cancellationToken);
             ProcessWrapper processWrapper = new(process);
             processWrapper.OutputReceived += (_, line) => _logger.Info($"[Minecraft] {line}");
 
@@ -165,7 +165,7 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
                 javaPath,
                 instanceDirectory);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             _logger.Info("Game preparation was cancelled.");
             throw;
@@ -218,6 +218,22 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
                 "Недостаточно свободного места. Для первой установки требуется не менее 4 GiB.",
                 $"Only {availableBytes} bytes are available on {root}.");
         }
+    }
+
+    private string EnsureManagedJavaExecutable(string? javaPath, string versionId)
+    {
+        if (string.IsNullOrWhiteSpace(javaPath) ||
+            !_paths.IsManagedRuntimePath(javaPath) ||
+            !File.Exists(javaPath))
+        {
+            throw new GameLaunchException(
+                GameLaunchError.JavaPreparationFailed,
+                "Не удалось подготовить управляемую Java runtime для Minecraft.",
+                $"CmlLib resolved an absent or unmanaged Java executable for version '{versionId}': " +
+                $"'{javaPath ?? "<null>"}'.");
+        }
+
+        return Path.GetFullPath(javaPath);
     }
 
     private static void ValidateRequest(GameLaunchRequest request)

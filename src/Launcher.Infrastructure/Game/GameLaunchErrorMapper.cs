@@ -11,7 +11,7 @@ public static class GameLaunchErrorMapper
 
     public static GameLaunchException Map(Exception exception, GameLaunchStage stage)
     {
-        if (exception is HttpRequestException)
+        if (exception is HttpRequestException or TaskCanceledException)
         {
             return Create(
                 GameLaunchError.NetworkUnavailable,

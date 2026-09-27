@@ -75,6 +75,8 @@ Launcher принимает:
 
 `id` содержит от 1 до 64 ASCII-букв, цифр, `-` или `_`; Windows device names (`CON`, `NUL`, `COM1` и аналогичные) запрещены. `minecraftVersion` и `loader.version` содержат не более 64 безопасных символов версии и не допускают path separators. В MVP-2 исполняется только `loader.type = "fabric"`; версия loader используется точно как передана, без автоматической замены на `latest`.
 
+Server Protocol v1 разбирается строго: неизвестные поля отклоняются. В частности, профиль не может передать `executable`, Java path, JVM arguments, environment variables или локальную игровую директорию.
+
 `manifestUrl` сохраняется в модели для следующего этапа, но manifest в MVP-2 не загружается. Относительный URL разрешается относительно фактического `profiles.json`; абсолютный URL поддерживается с теми же HTTPS/loopback правилами.
 
 ## Версионирование
