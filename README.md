@@ -2,7 +2,7 @@
 
 Открытый Windows-лаунчер для Minecraft-серверов с конфигурацией по URL. Пользователь указывает адрес сервера, лаунчер получает `bootstrap.json` и список игровых сборок, после чего сохраняет ник, выбранный профиль и объём RAM.
 
-Проект находится на этапе **MVP-2 development (0.2.0-dev)**. Кнопка «Играть» подготавливает официальные файлы Minecraft и совместимую Mojang Java runtime через CmlLib.Core, устанавливает точную версию Fabric из серверного профиля и запускает клиент с локальным offline nickname.
+Проект находится на этапе **MVP-3 development (0.3.0-dev)**. Перед запуском Minecraft Launcher получает Pack Manifest v1, проверяет SHA-256 и синхронизирует Launcher-managed `mods`/`config`. Затем CmlLib.Core подготавливает Minecraft, managed Java и точную версию Fabric и запускает клиент с локальным offline nickname.
 
 ## Требования
 
@@ -90,15 +90,15 @@ https://example.org/launcher/bootstrap.json
 
 ## Запуск игры
 
-Первый запуск может занять продолжительное время: CmlLib.Core получает официальные metadata и недостающие файлы Minecraft, assets, libraries и подходящую Mojang Java runtime, после чего устанавливает точную версию Fabric Loader из `profiles.json`. UI показывает реальные файловые и byte-progress события; подготовку можно отменить до старта процесса.
+Первый запуск может занять продолжительное время: Launcher потоково загружает недостающие pack-файлы, проверяет exact size и SHA-256 и только затем публикует их атомарно. После успешной pack sync CmlLib.Core получает официальные metadata и недостающие файлы Minecraft, assets, libraries и managed Java, после чего устанавливает точную версию Fabric Loader из `profiles.json`. UI показывает реальные файловые и byte-progress события; подготовку можно отменить до старта процесса.
 
 При следующих запусках существующие файлы проверяются и переиспользуются. Minecraft получает выбранный объём RAM, offline nickname и адрес/порт сервера. Offline-сессия не обходит Microsoft authentication: она подходит только для серверов, чья конфигурация допускает такой вход.
 
-Подробнее: [docs/game-launch.md](docs/game-launch.md).
+Кнопка «Проверить / восстановить» выполняет тот же полный hash/repair cycle без запуска Minecraft. Устаревшие файлы удаляются только из предыдущего managed state; сторонние пользовательские файлы сохраняются. Подробнее: [docs/game-launch.md](docs/game-launch.md) и [docs/pack-manifest.md](docs/pack-manifest.md).
 
 ## Текущие ограничения
 
-MVP-2 поддерживает только Fabric и offline nickname. Намеренно отсутствуют pack manifest updater, синхронизация mods/config, Repair, Microsoft login, собственная регистрация, backend, installer и self-update. Поля `packVersion` и `manifestUrl` зарезервированы для MVP-3 и сейчас не исполняются.
+MVP-3 поддерживает только Fabric, offline nickname и отдельные managed-файлы в `mods`/`config`. Намеренно отсутствуют Microsoft login, resourcepacks/shaderpacks, архивы, binary delta, signed manifests, backend/admin panel, installer и self-update.
 
 ## Публичный репозиторий и secrets policy
 
