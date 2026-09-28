@@ -1,0 +1,67 @@
+name: Package Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic version to package
+        required: true
+        default: 0.4.0-rc.1
+        type: string
+      channel:
+        description: Velopack release channel
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - stable
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore local tools
+        run: dotnet tool restore
+
+      - name: Restore
+        run: dotnet restore MinecraftLauncher.sln
+
+      - name: Build
+        run: dotnet build MinecraftLauncher.sln --no-restore
+
+      - name: Test
+        run: dotnet test MinecraftLauncher.sln --no-build --no-restore
+
+      - name: Verify formatting
+        run: dotnet format MinecraftLauncher.sln --verify-no-changes --no-restore
+
+      - name: Package unsigned Windows release
+        shell: pwsh
+        run: ./scripts/build-release.ps1 -Version '${{ inputs.version }}' -Channel '${{ inputs.channel }}'
+
+      - name: Verify SHA-256 manifest
+        shell: pwsh
+        run: |
+          $hashFile = 'artifacts/releases/${{ inputs.channel }}/SHA256SUMS.txt'
+          if (-not (Test-Path -LiteralPath $hashFile)) { throw 'SHA256SUMS.txt is missing.' }
+          if (-not (Select-String -LiteralPath $hashFile -Pattern '-Setup\.exe$')) { throw 'Setup.exe hash is missing.' }
+
+      - name: Upload Velopack artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: minecraft-launcher-${{ inputs.version }}-${{ inputs.channel }}-win-x64
+          path: artifacts/releases/${{ inputs.channel }}/
+          if-no-files-found: error
