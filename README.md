@@ -2,12 +2,12 @@
 
 Открытый Windows-лаунчер для Minecraft-серверов с конфигурацией по URL. Пользователь указывает адрес сервера, лаунчер получает `bootstrap.json` и список игровых сборок, после чего сохраняет ник, выбранный профиль и объём RAM.
 
-Проект находится на этапе **MVP-3 development (0.3.0-dev)**. Перед запуском Minecraft Launcher получает Pack Manifest v1, проверяет SHA-256 и синхронизирует Launcher-managed `mods`/`config`. Затем CmlLib.Core подготавливает Minecraft, managed Java и точную версию Fabric и запускает клиент с локальным offline nickname.
+Проект находится на этапе **MVP-4 Release Candidate (0.4.0-rc.1)**. Перед запуском Minecraft Launcher получает Pack Manifest v1, проверяет SHA-256 и синхронизирует Launcher-managed `mods`/`config`. Затем CmlLib.Core подготавливает Minecraft, managed Java и точную версию Fabric и запускает клиент с локальным offline nickname.
 
 ## Требования
 
 - Windows 10 или Windows 11 x64;
-- .NET 10 SDK для сборки из исходников;
+- .NET 10 SDK только для сборки из исходников; установленный и portable Launcher self-contained;
 - сервер конфигурации с HTTPS (HTTP разрешён только для loopback-адресов при локальной разработке).
 
 ## Сборка и запуск
@@ -20,6 +20,29 @@ dotnet run --project src/Launcher.App/Launcher.App.csproj
 ```
 
 Проект совместим с обычным workflow в VS Code и не требует Visual Studio для командной сборки.
+
+## Installation
+
+Обычному пользователю нужен только `lDiestrol.MinecraftLauncher-<version>-Setup.exe` из официального GitHub repository/release source проекта. Setup выполняет per-user установку Windows x64 и не требует отдельно установленного .NET Runtime или прав администратора. Установленное приложение и постоянные данные разделены:
+
+- Velopack application: `%LOCALAPPDATA%\lDiestrol.MinecraftLauncher`;
+- settings, логи и Minecraft: `%LOCALAPPDATA%\MinecraftLauncher`.
+
+Удаление или обновление приложения не предназначено для удаления второго каталога. Portable ZIP можно распаковать и запускать без установки. Velopack распознаёт portable mode; отдельный portable A→B apply E2E в рамках этого RC не выполнялся, поэтому основным проверенным update path остаётся версия из Setup.exe.
+
+## SmartScreen
+
+Текущий RC не подписан Authenticode. Windows может показать `Unknown Publisher` или SmartScreen. Для Setup.exe, полученного из официального источника проекта, выберите «Подробнее» → «Выполнить в любом случае». Не отключайте SmartScreen глобально. `SHA256SUMS.txt` позволяет проверить целостность конкретного файла, но не заменяет доверие Authenticode.
+
+## Updates
+
+В секции «Обновление Launcher» отображается текущая версия. Установленная версия позволяет вручную:
+
+1. проверить GitHub Releases;
+2. скачать найденное обновление с реальным progress;
+3. явно выбрать «Перезапустить и обновить».
+
+Обновление не является принудительным и не блокирует Minecraft при ошибке GitHub, timeout или rate limit. Канал (`dev` или `stable`) закрепляется при packaging и определяется Velopack из установленного пакета. Игровой сервер, bootstrap, profile и Pack Manifest не могут менять источник или канал обновления.
 
 ## Структура solution
 
@@ -98,7 +121,7 @@ https://example.org/launcher/bootstrap.json
 
 ## Текущие ограничения
 
-MVP-3 поддерживает только Fabric, offline nickname и отдельные managed-файлы в `mods`/`config`. Намеренно отсутствуют Microsoft login, resourcepacks/shaderpacks, архивы, binary delta, signed manifests, backend/admin panel, installer и self-update.
+MVP-4 поддерживает только Windows x64, Fabric, offline nickname и managed-файлы в `mods`/`config`. RC unsigned, поэтому возможен SmartScreen warning. Намеренно отсутствуют Microsoft login, Forge/NeoForge/Quilt, resourcepacks/shaderpacks, telemetry, backend/admin panel и коммерческая code signing. Официальный production GitHub Release на этом этапе не опубликован.
 
 ## Публичный репозиторий и secrets policy
 

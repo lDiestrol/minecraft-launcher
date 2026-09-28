@@ -1,4 +1,4 @@
-# Архитектура Launcher MVP-3
+# Архитектура Launcher MVP-4
 
 ## Проекты и зависимости
 
@@ -13,6 +13,7 @@
 - определение физической RAM через Windows API;
 - `CmlLibGameLaunchService`, который подготавливает и запускает Minecraft.
 - `PackSyncService`, который получает Pack Manifest v1, проверяет реальные files/SHA-256, выполняет staging, atomic publish и managed-state cleanup.
+- `VelopackLauncherUpdateService`, который проверяет официальный GitHub Releases source, загружает и передаёт update Velopack для применения.
 
 `Launcher.App` зависит от Core и Infrastructure. Это WPF presentation layer, ViewModels, команды и composition root в `App.xaml.cs`. `MainWindow.xaml.cs` содержит только `InitializeComponent()`.
 
@@ -66,14 +67,32 @@ Downloads идут последовательно и потоково в `instan
 
 Filesystem boundary состоит из строгой portable-path validation, `Path.GetFullPath` containment и проверки существующих parent components на `FileAttributes.ReparsePoint` непосредственно перед hash/write/replace/delete.
 
+## Три независимых lifecycle
+
+```text
+Launcher Application Update      Game Runtime Preparation       Pack Synchronization
+Velopack/GitHub Releases         CmlLib.Core/Mojang/Fabric      Server Pack Manifest v1
+application install root        assets/libraries/runtime       instances/<profile>/mods|config
+```
+
+Launcher Application Update меняет только установленное приложение под `%LOCALAPPDATA%\lDiestrol.MinecraftLauncher`. Game Runtime Preparation управляет Minecraft, Fabric, Java, assets и libraries. Pack Synchronization управляет только заявленными сервером файлами сборки в profile instance. Эти механизмы не объединены и не передают друг другу источники или команды.
+
+`ILauncherUpdateService` и собственные Core-модели не содержат типов Velopack. Framework startup hook находится в explicit `Program.Main` и вызывается до WPF startup. UI выполняет только ручную проверку; download/apply блокируются, пока активны Play, Pack Sync или Repair. Apply/restart происходит только по явной команде пользователя.
+
+Production source жёстко принадлежит приложению: `https://github.com/lDiestrol/minecraft-launcher`, без PAT/token и произвольного URL. Installed channel берётся из Velopack package metadata. Ошибка source не блокирует startup или игровые операции.
+
+## Граница доверия update
+
+Игровой сервер управляет `GameProfile`, версиями Minecraft/Fabric, адресом сервера, PackVersion, Manifest и managed `mods`/`config`.
+
+Игровой сервер не управляет Launcher executable, Velopack source, GitHub repository, update channel, installer, application commands, JVM hooks или environment variables. Соответствующих полей нет в bootstrap/profile/manifest моделях.
+
 ## Settings и logging
 
 `JsonSettingsStore` хранит JSON в `%LOCALAPPDATA%\MinecraftLauncher\settings.json` и заменяет файл через временный файл. Отсутствующий, пустой, повреждённый или старый частичный JSON восстанавливается безопасными defaults. ViewModel отдельно проверяет сохранённые RAM и profile id относительно текущей машины и ответа сервера.
 
 `FileAppLogger` пишет startup, shutdown, подключения, HTTP/JSON errors и необработанные исключения в `%LOCALAPPDATA%\MinecraftLauncher\logs`. Ошибка самого логгера не завершает приложение. Пользователь видит короткое сообщение, а stack trace остаётся только в логе.
 
-## Следующие интеграции
+## Release packaging
 
-- Self-update: отдельный подписанный release channel; Velopack или другой updater следует оценить тогда, когда появятся installer и release pipeline.
-
-Installer, release packaging и self-update не реализованы и не имитируются в MVP-3.
+Authoritative version хранится в `Directory.Build.props`. `scripts/build-release.ps1` выполняет self-contained `win-x64` publish и pinned `vpk 1.2.158`, создаёт Setup/full/portable/release index и `SHA256SUMS.txt`. Детали: [releasing.md](releasing.md).
