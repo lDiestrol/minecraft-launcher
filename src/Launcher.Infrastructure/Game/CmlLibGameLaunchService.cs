@@ -5,6 +5,7 @@ using CmlLib.Core.Installers;
 using CmlLib.Core.ModLoaders.FabricMC;
 using CmlLib.Core.ProcessBuilder;
 using CmlLib.Core.Version;
+using Launcher.Core;
 using Launcher.Core.Models;
 using Launcher.Core.Policies;
 using Launcher.Core.Services;
@@ -129,7 +130,7 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
                 ServerIp = request.ServerAddress,
                 ServerPort = request.ServerPort,
                 GameLauncherName = "MinecraftLauncher",
-                GameLauncherVersion = "0.3.0-dev",
+                GameLauncherVersion = LauncherVersion.Current,
             };
 
             using Process process = await launcher.BuildProcessAsync(

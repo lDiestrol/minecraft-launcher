@@ -13,6 +13,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly ISettingsStore _settingsStore;
     private readonly ISystemMemoryProvider _memoryProvider;
     private readonly LauncherOperationCoordinator _operationCoordinator;
+    private readonly LauncherUpdateCoordinator _updateCoordinator;
     private readonly IAppLogger _logger;
     private readonly SemaphoreSlim _saveLock = new(1, 1);
     private LauncherSettings _settings = new();
@@ -36,18 +37,25 @@ public sealed class MainViewModel : ObservableObject
     private string _progressDetails = string.Empty;
     private string _playButtonText = "ИГРАТЬ";
     private CancellationTokenSource? _gameLaunchCancellation;
+    private LauncherUpdateInfo? _availableUpdate;
+    private string _updateStatusText = string.Empty;
+    private double _updateProgressValue;
+    private bool _isUpdateProgressVisible;
+    private bool _isUpdateDownloaded;
 
     public MainViewModel(
         ILauncherServerClient serverClient,
         ISettingsStore settingsStore,
         ISystemMemoryProvider memoryProvider,
         LauncherOperationCoordinator operationCoordinator,
+        LauncherUpdateCoordinator updateCoordinator,
         IAppLogger logger)
     {
         _serverClient = serverClient;
         _settingsStore = settingsStore;
         _memoryProvider = memoryProvider;
         _operationCoordinator = operationCoordinator;
+        _updateCoordinator = updateCoordinator;
         _logger = logger;
 
         ConnectCommand = new AsyncRelayCommand(ConnectAsync, () => !IsBusy);
@@ -58,9 +66,22 @@ public sealed class MainViewModel : ObservableObject
         CancelGameCommand = new RelayCommand(CancelGame, () => IsGamePreparing);
         OpenSettingsCommand = new RelayCommand(OpenSettings, () => !IsBusy);
         CancelSettingsCommand = new RelayCommand(CancelSettings, () => !IsBusy);
+        CheckForUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync, () => !IsBusy && _updateCoordinator.IsInstalled);
+        DownloadUpdateCommand = new AsyncRelayCommand(
+            DownloadUpdateAsync,
+            () => !IsBusy && _availableUpdate is not null && !IsUpdateDownloaded);
+        ApplyUpdateCommand = new RelayCommand(
+            ApplyUpdateAndRestart,
+            () => !IsBusy && _availableUpdate is not null && IsUpdateDownloaded);
+
+        UpdateStatusText = _updateCoordinator.IsPortable
+            ? "Portable-режим: проверка обновлений выполняется вручную."
+            : _updateCoordinator.IsInstalled
+                ? "Проверка обновлений выполняется вручную."
+                : "Обновления доступны в установленной версии Launcher.";
     }
 
-    public string Version => "0.3.0-dev";
+    public string Version => $"v{_updateCoordinator.CurrentVersion}";
 
     public ObservableCollection<GameProfile> Profiles { get; } = [];
 
@@ -75,6 +96,45 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand OpenSettingsCommand { get; }
 
     public RelayCommand CancelSettingsCommand { get; }
+
+    public AsyncRelayCommand CheckForUpdatesCommand { get; }
+
+    public AsyncRelayCommand DownloadUpdateCommand { get; }
+
+    public RelayCommand ApplyUpdateCommand { get; }
+
+    public string UpdateStatusText
+    {
+        get => _updateStatusText;
+        private set => SetProperty(ref _updateStatusText, value);
+    }
+
+    public double UpdateProgressValue
+    {
+        get => _updateProgressValue;
+        private set => SetProperty(ref _updateProgressValue, value);
+    }
+
+    public bool IsUpdateProgressVisible
+    {
+        get => _isUpdateProgressVisible;
+        private set => SetProperty(ref _isUpdateProgressVisible, value);
+    }
+
+    public bool HasAvailableUpdate => _availableUpdate is not null;
+
+    public bool IsUpdateDownloaded
+    {
+        get => _isUpdateDownloaded;
+        private set
+        {
+            if (SetProperty(ref _isUpdateDownloaded, value))
+            {
+                DownloadUpdateCommand.RaiseCanExecuteChanged();
+                ApplyUpdateCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
 
     public LauncherScreen Screen
     {
@@ -173,6 +233,9 @@ public sealed class MainViewModel : ObservableObject
                 RepairCommand.RaiseCanExecuteChanged();
                 OpenSettingsCommand.RaiseCanExecuteChanged();
                 CancelSettingsCommand.RaiseCanExecuteChanged();
+                CheckForUpdatesCommand.RaiseCanExecuteChanged();
+                DownloadUpdateCommand.RaiseCanExecuteChanged();
+                ApplyUpdateCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -372,6 +435,113 @@ public sealed class MainViewModel : ObservableObject
         ServerUrl = _bootstrap.BootstrapUri.AbsoluteUri;
         Screen = LauncherScreen.Main;
         StatusText = "Готово";
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        IsBusy = true;
+        UpdateStatusText = "Проверка обновлений...";
+        IsUpdateProgressVisible = false;
+        IsUpdateDownloaded = false;
+        SetAvailableUpdate(null);
+
+        try
+        {
+            LauncherUpdateInfo? update = await _updateCoordinator.CheckForUpdatesAsync(CancellationToken.None);
+            SetAvailableUpdate(update);
+            UpdateStatusText = update is null
+                ? "Установлена актуальная версия."
+                : $"Доступна версия {update.Version}.";
+        }
+        catch (LauncherUpdateException exception)
+        {
+            _logger.Error(exception.Message, exception);
+            UpdateStatusText = exception.UserMessage;
+        }
+        catch (Exception exception)
+        {
+            _logger.Error("Unexpected Launcher update check failure.", exception);
+            UpdateStatusText = "Ошибка проверки обновления. Launcher продолжит работать.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task DownloadUpdateAsync()
+    {
+        if (_availableUpdate is null)
+        {
+            UpdateStatusText = "Сначала проверьте наличие обновления.";
+            return;
+        }
+
+        IsBusy = true;
+        IsUpdateProgressVisible = true;
+        UpdateProgressValue = 0;
+        UpdateStatusText = "Загрузка обновления...";
+        Progress<int> progress = new(value => UpdateProgressValue = value);
+
+        try
+        {
+            await _updateCoordinator.DownloadUpdateAsync(
+                _availableUpdate,
+                progress,
+                CancellationToken.None);
+            UpdateProgressValue = 100;
+            IsUpdateDownloaded = true;
+            UpdateStatusText = "Обновление загружено. Перезапустите Launcher для установки.";
+        }
+        catch (LauncherUpdateException exception)
+        {
+            _logger.Error(exception.Message, exception);
+            IsUpdateProgressVisible = false;
+            UpdateStatusText = exception.UserMessage;
+        }
+        catch (Exception exception)
+        {
+            _logger.Error("Unexpected Launcher update download failure.", exception);
+            IsUpdateProgressVisible = false;
+            UpdateStatusText = "Не удалось скачать обновление.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void ApplyUpdateAndRestart()
+    {
+        if (_availableUpdate is null || !IsUpdateDownloaded)
+        {
+            UpdateStatusText = "Сначала скачайте обновление.";
+            return;
+        }
+
+        try
+        {
+            UpdateStatusText = "Перезапуск для установки обновления...";
+            _updateCoordinator.ApplyUpdateAndRestart(_availableUpdate);
+        }
+        catch (LauncherUpdateException exception)
+        {
+            _logger.Error(exception.Message, exception);
+            UpdateStatusText = exception.UserMessage;
+        }
+        catch (Exception exception)
+        {
+            _logger.Error("Unexpected Launcher update apply failure.", exception);
+            UpdateStatusText = "Не удалось применить обновление и перезапустить Launcher.";
+        }
+    }
+
+    private void SetAvailableUpdate(LauncherUpdateInfo? update)
+    {
+        _availableUpdate = update;
+        OnPropertyChanged(nameof(HasAvailableUpdate));
+        DownloadUpdateCommand.RaiseCanExecuteChanged();
+        ApplyUpdateCommand.RaiseCanExecuteChanged();
     }
 
     private async Task PlayAsync()

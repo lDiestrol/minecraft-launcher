@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Windows;
 using System.Windows.Threading;
 using Launcher.App.ViewModels;
+using Launcher.Core;
 using Launcher.Core.Services;
 using Launcher.Infrastructure.Game;
 using Launcher.Infrastructure.Http;
@@ -9,6 +10,7 @@ using Launcher.Infrastructure.Logging;
 using Launcher.Infrastructure.Pack;
 using Launcher.Infrastructure.Persistence;
 using Launcher.Infrastructure.System;
+using Launcher.Infrastructure.Updates;
 
 namespace Launcher.App;
 
@@ -25,7 +27,7 @@ public partial class App : Application
 
         LauncherDataPaths paths = new();
         _logger = new FileAppLogger(paths);
-        _logger.Info("Minecraft Launcher 0.3.0-dev starting.");
+        _logger.Info($"Minecraft Launcher {LauncherVersion.Current} starting.");
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
@@ -39,7 +41,7 @@ public partial class App : Application
             {
                 Timeout = TimeSpan.FromSeconds(10),
             };
-            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("MinecraftLauncher/0.3.0-dev");
+            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"MinecraftLauncher/{LauncherVersion.Current}");
 
             _packHttpClient = new HttpClient(new HttpClientHandler
             {
@@ -49,22 +51,32 @@ public partial class App : Application
             {
                 Timeout = TimeSpan.FromMinutes(10),
             };
-            _packHttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("MinecraftLauncher/0.3.0-dev");
+            _packHttpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"MinecraftLauncher/{LauncherVersion.Current}");
 
             _gameHttpClient = new HttpClient
             {
                 Timeout = TimeSpan.FromMinutes(10),
             };
-            _gameHttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("MinecraftLauncher/0.3.0-dev");
+            _gameHttpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"MinecraftLauncher/{LauncherVersion.Current}");
 
             CmlLibGameLaunchService gameLaunchService = new(_gameHttpClient, paths, _logger);
             PackSyncService packSyncService = new(_packHttpClient, paths, _logger);
+            LauncherOperationCoordinator operationCoordinator = new(packSyncService, gameLaunchService);
+            VelopackLauncherUpdateService updateService = new(_logger);
+            LauncherUpdateCoordinator updateCoordinator = new(updateService, operationCoordinator);
+            string executionMode = updateService.IsPortable
+                ? "portable"
+                : updateService.IsInstalled
+                    ? "installed"
+                    : "development";
+            _logger.Info($"Launcher execution mode: {executionMode}.");
 
             MainViewModel viewModel = new(
                 new LauncherServerClient(_httpClient, _logger),
                 new JsonSettingsStore(paths, _logger),
                 new WindowsSystemMemoryProvider(),
-                new LauncherOperationCoordinator(packSyncService, gameLaunchService),
+                operationCoordinator,
+                updateCoordinator,
                 _logger);
 
             await viewModel.InitializeAsync();
