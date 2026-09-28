@@ -74,7 +74,7 @@ try {
         throw "Published version '$publishedVersion' does not match package version '$Version'."
     }
 
-    $notesPath = Join-Path $repoRoot 'docs\release-notes\0.4.0-rc.1.md'
+    $notesPath = Join-Path $repoRoot "docs\release-notes\$Version.md"
     $vpkArguments = @(
         'vpk', 'pack',
         '--packId', 'lDiestrol.MinecraftLauncher',
