@@ -76,7 +76,7 @@ public sealed class LauncherServerClientTests
         ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
             () => client.GetBootstrapAsync(BootstrapUri, CancellationToken.None));
 
-        Assert.Contains("bootstrap.json", exception.UserMessage, StringComparison.Ordinal);
+        Assert.Contains("некорректную конфигурацию", exception.UserMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -223,7 +223,7 @@ public sealed class LauncherServerClientTests
         ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
             () => client.GetBootstrapAsync(BootstrapUri, CancellationToken.None));
 
-        Assert.Contains("404", exception.UserMessage, StringComparison.Ordinal);
+        Assert.Contains("Сервер не найден", exception.UserMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -234,7 +234,7 @@ public sealed class LauncherServerClientTests
         ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
             () => client.GetBootstrapAsync(BootstrapUri, CancellationToken.None));
 
-        Assert.Contains("слишком большой", exception.UserMessage, StringComparison.Ordinal);
+        Assert.Contains("слишком большая", exception.UserMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -358,7 +358,7 @@ public sealed class LauncherServerClientTests
         ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
             () => client.GetProfilesAsync(Bootstrap(), CancellationToken.None));
 
-        Assert.Contains("слишком большой", exception.UserMessage, StringComparison.Ordinal);
+        Assert.Contains("слишком большая", exception.UserMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -369,7 +369,7 @@ public sealed class LauncherServerClientTests
         ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
             () => client.GetProfilesAsync(Bootstrap(), CancellationToken.None));
 
-        Assert.Contains("слишком большой", exception.UserMessage, StringComparison.Ordinal);
+        Assert.Contains("слишком большая", exception.UserMessage, StringComparison.Ordinal);
     }
 
     private static BootstrapConfiguration Bootstrap() => new(

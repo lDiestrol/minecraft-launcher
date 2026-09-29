@@ -72,7 +72,7 @@ public sealed class LauncherServerClient : ILauncherServerClient
         {
             _logger.Error("Failed to parse bootstrap JSON.", exception);
             throw new ServerConnectionException(
-                "Сервер вернул некорректный bootstrap.json.",
+                "Сервер вернул некорректную конфигурацию.",
                 "Invalid bootstrap JSON.",
                 exception);
         }
@@ -121,7 +121,7 @@ public sealed class LauncherServerClient : ILauncherServerClient
         {
             _logger.Error("Failed to parse profiles JSON.", exception);
             throw new ServerConnectionException(
-                "Сервер вернул некорректный profiles.json.",
+                "Сервер вернул некорректную конфигурацию.",
                 "Invalid profiles JSON.",
                 exception);
         }
@@ -203,7 +203,7 @@ public sealed class LauncherServerClient : ILauncherServerClient
         {
             _logger.Error($"HTTP request failed for {currentUri}.", exception);
             throw new ServerConnectionException(
-                "Не удалось подключиться к серверу. Проверьте адрес, сеть и сертификат.",
+                "Не удалось подключиться к серверу. Проверьте адрес и подключение к интернету.",
                 $"HTTP request failed for {currentUri}.",
                 exception);
         }
@@ -287,7 +287,7 @@ public sealed class LauncherServerClient : ILauncherServerClient
             $"Response for {uri} exceeds the {maximumBytes}-byte limit " +
             $"(reported or received: {receivedBytes} bytes).");
         return new ServerConnectionException(
-            $"Файл {documentName} слишком большой.",
+            "Конфигурация сервера слишком большая.",
             $"Response for {uri} exceeds the {maximumBytes}-byte limit.");
     }
 
@@ -348,9 +348,9 @@ public sealed class LauncherServerClient : ILauncherServerClient
 
     private static string GetStatusMessage(HttpStatusCode statusCode, string documentName) => statusCode switch
     {
-        HttpStatusCode.NotFound => $"Сервер не содержит {documentName} (HTTP 404).",
+        HttpStatusCode.NotFound => "Сервер не найден. Проверьте адрес.",
         >= HttpStatusCode.InternalServerError => "Сервер временно недоступен. Повторите попытку позже.",
-        _ => $"Сервер отклонил запрос (HTTP {(int)statusCode}).",
+        _ => "Сервер временно недоступен. Проверьте адрес и повторите попытку.",
     };
 
     private static string? NullIfWhiteSpace(string? value) =>
