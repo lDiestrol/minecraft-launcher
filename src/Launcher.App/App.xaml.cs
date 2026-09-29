@@ -81,13 +81,16 @@ public partial class App : Application
 
             await viewModel.InitializeAsync();
 
+            _logger.Info("Creating main window.");
             MainWindow window = new()
             {
                 DataContext = viewModel,
             };
+            _logger.Info("Main window created.");
             MainWindow = window;
             ShutdownMode = ShutdownMode.OnMainWindowClose;
             window.Show();
+            _logger.Info("Main window shown.");
         }
         catch (Exception exception)
         {

@@ -30,6 +30,7 @@ public sealed class MainViewModel : ObservableObject
     private string? _errorText;
     private bool _isBusy;
     private bool _isChangingServer;
+    private bool _hasConnectionFailure;
     private bool _isGamePreparing;
     private bool _isGameRunning;
     private bool _isProgressIndeterminate = true;
@@ -58,7 +59,7 @@ public sealed class MainViewModel : ObservableObject
         _updateCoordinator = updateCoordinator;
         _logger = logger;
 
-        ConnectCommand = new AsyncRelayCommand(ConnectAsync, () => !IsBusy);
+        ConnectCommand = new AsyncRelayCommand(ConnectAsync, CanConnect);
         PlayCommand = new AsyncRelayCommand(PlayAsync, () => !IsBusy);
         RepairCommand = new AsyncRelayCommand(
             RepairAsync,
@@ -66,6 +67,7 @@ public sealed class MainViewModel : ObservableObject
         CancelGameCommand = new RelayCommand(CancelGame, () => IsGamePreparing);
         OpenSettingsCommand = new RelayCommand(OpenSettings, () => !IsBusy);
         CancelSettingsCommand = new RelayCommand(CancelSettings, () => !IsBusy);
+        ChangeServerCommand = new RelayCommand(BeginServerChange, () => !IsBusy);
         CheckForUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync, () => !IsBusy && _updateCoordinator.IsInstalled);
         DownloadUpdateCommand = new AsyncRelayCommand(
             DownloadUpdateAsync,
@@ -96,6 +98,8 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand OpenSettingsCommand { get; }
 
     public RelayCommand CancelSettingsCommand { get; }
+
+    public RelayCommand ChangeServerCommand { get; }
 
     public AsyncRelayCommand CheckForUpdatesCommand { get; }
 
@@ -145,8 +149,24 @@ public sealed class MainViewModel : ObservableObject
     public string ServerUrl
     {
         get => _serverUrl;
-        set => SetProperty(ref _serverUrl, value);
+        set
+        {
+            if (SetProperty(ref _serverUrl, value))
+            {
+                OnPropertyChanged(nameof(ServerUrlValidationText));
+                OnPropertyChanged(nameof(HasServerUrlValidationError));
+                ConnectCommand.RaiseCanExecuteChanged();
+            }
+        }
     }
+
+    public string? ServerUrlValidationText =>
+        string.IsNullOrWhiteSpace(ServerUrl) ||
+        ServerUrlNormalizer.TryNormalize(ServerUrl, out _, out string? validationError)
+            ? null
+            : validationError;
+
+    public bool HasServerUrlValidationError => ServerUrlValidationText is not null;
 
     public string ServerName
     {
@@ -233,6 +253,7 @@ public sealed class MainViewModel : ObservableObject
                 RepairCommand.RaiseCanExecuteChanged();
                 OpenSettingsCommand.RaiseCanExecuteChanged();
                 CancelSettingsCommand.RaiseCanExecuteChanged();
+                ChangeServerCommand.RaiseCanExecuteChanged();
                 CheckForUpdatesCommand.RaiseCanExecuteChanged();
                 DownloadUpdateCommand.RaiseCanExecuteChanged();
                 ApplyUpdateCommand.RaiseCanExecuteChanged();
@@ -252,6 +273,20 @@ public sealed class MainViewModel : ObservableObject
             }
         }
     }
+
+    public bool HasConnectionFailure
+    {
+        get => _hasConnectionFailure;
+        private set
+        {
+            if (SetProperty(ref _hasConnectionFailure, value))
+            {
+                OnPropertyChanged(nameof(ConnectButtonText));
+            }
+        }
+    }
+
+    public string ConnectButtonText => HasConnectionFailure ? "ПОВТОРИТЬ" : "ПОДКЛЮЧИТЬСЯ";
 
     public bool IsGamePreparing
     {
@@ -352,17 +387,19 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
+        LauncherScreen connectionScreen = Screen;
+        HasConnectionFailure = false;
         IsBusy = true;
         _logger.Info($"Connecting to launcher server: {bootstrapUri}");
 
         try
         {
-            StatusText = "Получение конфигурации";
+            StatusText = "Подключение...";
             BootstrapConfiguration bootstrap = await _serverClient.GetBootstrapAsync(
                 bootstrapUri!,
                 CancellationToken.None);
 
-            StatusText = "Получение профилей";
+            StatusText = "Подключение...";
             IReadOnlyList<GameProfile> profiles = await _serverClient.GetProfilesAsync(
                 bootstrap,
                 CancellationToken.None);
@@ -399,14 +436,20 @@ public sealed class MainViewModel : ObservableObject
             _logger.Error(exception.Message, exception);
             ErrorText = exception.UserMessage;
             StatusText = "Ошибка";
-            Screen = LauncherScreen.Onboarding;
+            HasConnectionFailure = connectionScreen == LauncherScreen.Onboarding;
+            Screen = connectionScreen == LauncherScreen.Settings
+                ? LauncherScreen.Settings
+                : LauncherScreen.Onboarding;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             _logger.Error("Could not persist launcher settings.", exception);
             ErrorText = "Подключение выполнено, но настройки не удалось сохранить.";
             StatusText = "Ошибка";
-            Screen = LauncherScreen.Onboarding;
+            HasConnectionFailure = connectionScreen == LauncherScreen.Onboarding;
+            Screen = connectionScreen == LauncherScreen.Settings
+                ? LauncherScreen.Settings
+                : LauncherScreen.Onboarding;
         }
         finally
         {
@@ -419,8 +462,7 @@ public sealed class MainViewModel : ObservableObject
         IsChangingServer = true;
         ErrorText = null;
         ServerUrl = _bootstrap?.BootstrapUri.AbsoluteUri ?? _settings.ServerUrl ?? string.Empty;
-        Screen = LauncherScreen.Onboarding;
-        StatusText = "Ожидание";
+        Screen = LauncherScreen.Settings;
     }
 
     private void CancelSettings()
@@ -435,6 +477,14 @@ public sealed class MainViewModel : ObservableObject
         ServerUrl = _bootstrap.BootstrapUri.AbsoluteUri;
         Screen = LauncherScreen.Main;
         StatusText = "Готово";
+    }
+
+    private void BeginServerChange()
+    {
+        HasConnectionFailure = false;
+        ErrorText = null;
+        ServerUrl = string.Empty;
+        StatusText = "Ожидание";
     }
 
     private async Task CheckForUpdatesAsync()
@@ -722,7 +772,7 @@ public sealed class MainViewModel : ObservableObject
 
     private void UpdateGameProgress(GameLaunchProgress progress)
     {
-        StatusText = progress.Message;
+        StatusText = GetFriendlyStatus(progress.Stage);
         if (progress.Percentage is double percentage)
         {
             IsProgressIndeterminate = false;
@@ -750,7 +800,7 @@ public sealed class MainViewModel : ObservableObject
 
     private void UpdatePackProgress(PackSyncProgress progress)
     {
-        StatusText = progress.Message;
+        StatusText = GetFriendlyStatus(progress.Stage);
         if (progress.Percentage is double percentage)
         {
             IsProgressIndeterminate = false;
@@ -776,7 +826,7 @@ public sealed class MainViewModel : ObservableObject
             return $"{completedFiles} / {progress.TotalFiles.Value} файлов";
         }
 
-        return progress.ProcessId is int processId ? $"PID: {processId}" : string.Empty;
+        return string.Empty;
     }
 
     private static string FormatProgressDetails(PackSyncProgress progress)
@@ -794,7 +844,28 @@ public sealed class MainViewModel : ObservableObject
             : string.Empty;
     }
 
+    private static string GetFriendlyStatus(GameLaunchStage stage) => stage switch
+    {
+        GameLaunchStage.DownloadingMinecraft => "Загрузка Minecraft...",
+        GameLaunchStage.StartingMinecraft => "Запуск Minecraft...",
+        GameLaunchStage.MinecraftStarted => "Minecraft запущен",
+        GameLaunchStage.MinecraftExited => "Minecraft завершён",
+        GameLaunchStage.Error => "Ошибка",
+        _ => "Подготовка Minecraft...",
+    };
+
+    private static string GetFriendlyStatus(PackSyncStage stage) => stage switch
+    {
+        PackSyncStage.FetchingManifest or PackSyncStage.DownloadingFiles => "Загрузка сборки...",
+        PackSyncStage.ApplyingUpdate or PackSyncStage.RemovingObsoleteFiles => "Обновление файлов...",
+        PackSyncStage.Complete => "Готово",
+        _ => "Проверка файлов...",
+    };
+
     private static string FormatBytes(long bytes) => $"{bytes / 1024d / 1024d:0.#} MB";
+
+    private bool CanConnect() =>
+        !IsBusy && ServerUrlNormalizer.TryNormalize(ServerUrl, out _, out _);
 
     private void ScheduleSettingsSave()
     {

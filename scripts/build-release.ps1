@@ -26,6 +26,7 @@ $releaseDir = Join-Path $releaseRoot $Channel
 $project = Join-Path $repoRoot 'src\Launcher.App\Launcher.App.csproj'
 $solution = Join-Path $repoRoot 'MinecraftLauncher.sln'
 $mainExe = 'MinecraftLauncher.exe'
+$iconPath = Join-Path $repoRoot 'src\Launcher.App\Assets\Launcher.ico'
 
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
     throw '.NET SDK 10 is required.'
@@ -33,6 +34,10 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
 
 if (-not (Test-Path -LiteralPath (Join-Path $repoRoot '.config\dotnet-tools.json'))) {
     throw 'Repository-local dotnet tool manifest is missing.'
+}
+
+if (-not (Test-Path -LiteralPath $iconPath)) {
+    throw "Launcher icon is missing: $iconPath"
 }
 
 New-Item -ItemType Directory -Force -Path $publishRoot, $releaseRoot | Out-Null
@@ -83,6 +88,7 @@ try {
         '--mainExe', $mainExe,
         '--packTitle', 'Minecraft Launcher',
         '--packAuthors', 'lDiestrol',
+        '--icon', $iconPath,
         '--channel', $Channel,
         '--runtime', 'win-x64',
         '--outputDir', $releaseDir
