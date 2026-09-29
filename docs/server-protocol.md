@@ -7,9 +7,9 @@
 Launcher принимает:
 
 - базовый URL `https://example.org` или `https://example.org/`;
-- прямой JSON URL, например `https://example.org/custom/bootstrap.json`.
+- прямой URL конфигурации с непустым путём, например `https://example.org/custom/bootstrap.json`.
 
-Базовый URL нормализуется в `https://example.org/launcher/bootstrap.json`. Любой абсолютный URL, путь которого заканчивается на `.json` без учёта регистра, используется напрямую. Fragment удаляется; query прямой JSON-ссылки сохраняется.
+Базовый URL с пустым или корневым путём нормализуется в `https://example.org/launcher/bootstrap.json`. Любой URL с непустым путём используется напрямую: Launcher не пытается угадывать назначение пути по расширению файла. Fragment отклоняется; query прямой ссылки сохраняется, а у базового URL отклоняется, чтобы при построении стандартного endpoint параметры не терялись неявно.
 
 Разрешён HTTPS. Обычный HTTP разрешён только для loopback (`localhost`, `127.0.0.1`, `::1`) в локальной разработке. URL с embedded username/password отклоняются.
 

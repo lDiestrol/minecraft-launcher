@@ -2,7 +2,7 @@
 
 Открытый Windows-лаунчер для Minecraft-серверов с конфигурацией по URL. Пользователь указывает адрес сервера, лаунчер получает `bootstrap.json` и список игровых сборок, после чего сохраняет ник, выбранный профиль и объём RAM.
 
-Проект находится на этапе **MVP-4 Release Candidate (0.4.0-rc.1)**. Перед запуском Minecraft Launcher получает Pack Manifest v1, проверяет SHA-256 и синхронизирует Launcher-managed `mods`/`config`. Затем CmlLib.Core подготавливает Minecraft, managed Java и точную версию Fabric и запускает клиент с локальным offline nickname.
+Проект находится на этапе **первого публичного Release Candidate (0.5.0-rc.1)**. Перед запуском Minecraft Launcher получает Pack Manifest v1, проверяет SHA-256 и синхронизирует Launcher-managed `mods`/`config`. Затем CmlLib.Core подготавливает Minecraft, managed Java и точную версию Fabric и запускает клиент с локальным offline nickname.
 
 ## Требования
 
@@ -36,7 +36,7 @@ dotnet run --project src/Launcher.App/Launcher.App.csproj
 
 ## Updates
 
-В секции «Обновление Launcher» отображается текущая версия. Установленная версия позволяет вручную:
+В настройках, в секции «Обновления Launcher», отображается текущая версия. Установленная версия позволяет вручную:
 
 1. проверить GitHub Releases;
 2. скачать найденное обновление с реальным progress;
@@ -117,7 +117,7 @@ https://example.org/launcher/bootstrap.json
 
 При следующих запусках существующие файлы проверяются и переиспользуются. Minecraft получает выбранный объём RAM, offline nickname и адрес/порт сервера. Offline-сессия не обходит Microsoft authentication: она подходит только для серверов, чья конфигурация допускает такой вход.
 
-Кнопка «Проверить / восстановить» выполняет тот же полный hash/repair cycle без запуска Minecraft. Устаревшие файлы удаляются только из предыдущего managed state; сторонние пользовательские файлы сохраняются. Подробнее: [docs/game-launch.md](docs/game-launch.md) и [docs/pack-manifest.md](docs/pack-manifest.md).
+Кнопка «Проверить файлы» выполняет тот же полный hash/repair cycle без запуска Minecraft. Устаревшие файлы удаляются только из предыдущего managed state; сторонние пользовательские файлы сохраняются. Подробнее: [docs/game-launch.md](docs/game-launch.md) и [docs/pack-manifest.md](docs/pack-manifest.md).
 
 ## Текущие ограничения
 
