@@ -268,10 +268,17 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <StackPanel Orientation="Horizontal">
-                <Image Width="30" Height="30" Source="Assets/Launcher.png" />
-                <TextBlock Margin="11,0,0,0" VerticalAlignment="Center" FontSize="18" FontWeight="SemiBold" Text="Launcher" />
-            </StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal">
+                    <Image Width="30" Height="30" Source="Assets/Launcher.png" />
+                    <TextBlock Margin="11,0,0,0" VerticalAlignment="Center" FontSize="18" FontWeight="SemiBold" Text="Launcher" />
+                </StackPanel>
+                <Button Grid.Column="1" VerticalAlignment="Center" Command="{Binding OpenSettingsCommand}" Content="Настройки" />
+            </Grid>
 
             <Border Grid.Row="1" MaxWidth="540" Margin="0,28,0,24" VerticalAlignment="Center" Style="{StaticResource Card}">
                 <StackPanel>

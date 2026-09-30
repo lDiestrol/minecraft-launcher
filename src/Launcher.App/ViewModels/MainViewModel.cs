@@ -19,6 +19,8 @@ public sealed class MainViewModel : ObservableObject
     private LauncherSettings _settings = new();
     private BootstrapConfiguration? _bootstrap;
     private LauncherScreen _screen = LauncherScreen.Onboarding;
+    private LauncherScreen _settingsReturnScreen = LauncherScreen.Onboarding;
+    private string _serverUrlBeforeSettings = string.Empty;
     private string _serverUrl = string.Empty;
     private string _serverName = string.Empty;
     private string _nickname = string.Empty;
@@ -459,21 +461,27 @@ public sealed class MainViewModel : ObservableObject
 
     private void OpenSettings()
     {
+        _settingsReturnScreen = Screen;
+        _serverUrlBeforeSettings = ServerUrl;
         IsChangingServer = true;
         ErrorText = null;
-        ServerUrl = _bootstrap?.BootstrapUri.AbsoluteUri ?? _settings.ServerUrl ?? string.Empty;
+        ServerUrl = _bootstrap?.BootstrapUri.AbsoluteUri
+            ?? (string.IsNullOrWhiteSpace(ServerUrl) ? _settings.ServerUrl ?? string.Empty : ServerUrl);
         Screen = LauncherScreen.Settings;
     }
 
     private void CancelSettings()
     {
+        IsChangingServer = false;
+        ErrorText = null;
+
         if (_bootstrap is null)
         {
+            ServerUrl = _serverUrlBeforeSettings;
+            Screen = _settingsReturnScreen;
             return;
         }
 
-        IsChangingServer = false;
-        ErrorText = null;
         ServerUrl = _bootstrap.BootstrapUri.AbsoluteUri;
         Screen = LauncherScreen.Main;
         StatusText = "Готово";
