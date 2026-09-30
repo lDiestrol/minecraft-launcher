@@ -376,8 +376,13 @@ public sealed class MainViewModel : ObservableObject
         }
 
         ServerUrl = _settings.ServerUrl;
-        await ConnectAsync();
+        Screen = LauncherScreen.Onboarding;
+        StatusText = "Ожидание";
     }
+
+    public Task AutoConnectAsync() => string.IsNullOrWhiteSpace(_settings.ServerUrl)
+        ? Task.CompletedTask
+        : ConnectAsync();
 
     private async Task ConnectAsync()
     {

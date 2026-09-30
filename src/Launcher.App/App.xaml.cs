@@ -91,6 +91,9 @@ public partial class App : Application
             ShutdownMode = ShutdownMode.OnMainWindowClose;
             window.Show();
             _logger.Info("Main window shown.");
+
+            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+            await viewModel.AutoConnectAsync();
         }
         catch (Exception exception)
         {
