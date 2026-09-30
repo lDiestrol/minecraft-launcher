@@ -37,12 +37,23 @@ public static class ServerUrlNormalizer
             return false;
         }
 
-        UriBuilder builder = new(source) { Fragment = string.Empty };
-        bool isJson = builder.Path.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
-        if (!isJson)
+        if (!string.IsNullOrEmpty(source.Fragment))
         {
+            error = "Адрес сервера не должен содержать фрагмент после символа #.";
+            return false;
+        }
+
+        UriBuilder builder = new(source);
+        bool isBaseUrl = source.AbsolutePath is "" or "/";
+        if (isBaseUrl)
+        {
+            if (!string.IsNullOrEmpty(source.Query))
+            {
+                error = "Базовый адрес сервера не должен содержать параметры после символа ?.";
+                return false;
+            }
+
             builder.Path = DefaultBootstrapPath;
-            builder.Query = string.Empty;
         }
 
         bootstrapUri = builder.Uri;

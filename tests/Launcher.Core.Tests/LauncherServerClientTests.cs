@@ -76,7 +76,7 @@ public sealed class LauncherServerClientTests
         ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
             () => client.GetBootstrapAsync(BootstrapUri, CancellationToken.None));
 
-        Assert.Contains("bootstrap.json", exception.UserMessage, StringComparison.Ordinal);
+        Assert.Contains("некорректную конфигурацию", exception.UserMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -91,6 +91,131 @@ public sealed class LauncherServerClientTests
     }
 
     [Fact]
+    public async Task GetBootstrapAsync_RejectsRemoteHttpRequestAtClientBoundary()
+    {
+        LauncherServerClient client = CreateClient(Json("{}"));
+
+        await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetBootstrapAsync(
+                new Uri("http://example.test/launcher/bootstrap.json"),
+                CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(301)]
+    [InlineData(302)]
+    [InlineData(303)]
+    [InlineData(307)]
+    [InlineData(308)]
+    public async Task GetBootstrapAsync_FollowsHttpsRedirectAfterValidatingTarget(int statusCode)
+    {
+        Uri redirectedUri = new("https://example.test/redirected/bootstrap.json");
+        (LauncherServerClient client, RecordingHttpMessageHandler handler) = CreateClient(
+            (_, requestNumber) => requestNumber == 1
+                ? Redirect(statusCode, "/redirected/bootstrap.json")
+                : Json("""
+                    {"schemaVersion":1,"serverName":"Server","profilesUrl":"profiles.json"}
+                    """));
+
+        BootstrapConfiguration result = await client.GetBootstrapAsync(BootstrapUri, CancellationToken.None);
+
+        Assert.Equal([BootstrapUri, redirectedUri], handler.RequestUris);
+        Assert.Equal(redirectedUri, result.BootstrapUri);
+        Assert.Equal("https://example.test/redirected/profiles.json", result.ProfilesUri.AbsoluteUri);
+    }
+
+    [Fact]
+    public async Task GetBootstrapAsync_FollowsLoopbackHttpRedirect()
+    {
+        Uri initialUri = new("http://localhost:8080/bootstrap.json");
+        Uri redirectedUri = new("http://localhost:8080/config/bootstrap.json");
+        (LauncherServerClient client, RecordingHttpMessageHandler handler) = CreateClient(
+            (_, requestNumber) => requestNumber == 1
+                ? Redirect(302, "/config/bootstrap.json")
+                : Json("""
+                    {"schemaVersion":1,"serverName":"Local","profilesUrl":"profiles.json"}
+                    """));
+
+        BootstrapConfiguration result = await client.GetBootstrapAsync(initialUri, CancellationToken.None);
+
+        Assert.Equal([initialUri, redirectedUri], handler.RequestUris);
+        Assert.Equal(redirectedUri, result.BootstrapUri);
+    }
+
+    [Fact]
+    public async Task GetBootstrapAsync_RejectsLoopbackToRemoteHttpBeforeSecondRequest()
+    {
+        Uri initialUri = new("http://localhost:8080/bootstrap.json");
+        Uri forbiddenUri = new("http://remote.example.test/bootstrap.json");
+        (LauncherServerClient client, RecordingHttpMessageHandler handler) = CreateClient(
+            (_, _) => Redirect(302, forbiddenUri.AbsoluteUri));
+
+        await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetBootstrapAsync(initialUri, CancellationToken.None));
+
+        Assert.Equal(initialUri, Assert.Single(handler.RequestUris));
+        Assert.DoesNotContain(forbiddenUri, handler.RequestUris);
+    }
+
+    [Fact]
+    public async Task GetBootstrapAsync_RejectsHttpsToRemoteHttpBeforeSecondRequest()
+    {
+        Uri forbiddenUri = new("http://remote.example.test/bootstrap.json");
+        (LauncherServerClient client, RecordingHttpMessageHandler handler) = CreateClient(
+            (_, _) => Redirect(307, forbiddenUri.AbsoluteUri));
+
+        await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetBootstrapAsync(BootstrapUri, CancellationToken.None));
+
+        Assert.Equal(BootstrapUri, Assert.Single(handler.RequestUris));
+        Assert.DoesNotContain(forbiddenUri, handler.RequestUris);
+    }
+
+    [Fact]
+    public async Task GetBootstrapAsync_RejectsRedirectWithoutLocation()
+    {
+        (LauncherServerClient client, RecordingHttpMessageHandler handler) = CreateClient(
+            (_, _) => new HttpResponseMessage(HttpStatusCode.Found));
+
+        ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetBootstrapAsync(BootstrapUri, CancellationToken.None));
+
+        Assert.Contains("перенаправление", exception.UserMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(handler.RequestUris);
+    }
+
+    [Fact]
+    public async Task GetBootstrapAsync_RejectsRedirectWithInvalidLocation()
+    {
+        (LauncherServerClient client, RecordingHttpMessageHandler handler) = CreateClient(
+            (_, _) =>
+            {
+                HttpResponseMessage response = new(HttpStatusCode.Found);
+                Assert.True(response.Headers.TryAddWithoutValidation("Location", "http://[invalid"));
+                return response;
+            });
+
+        ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetBootstrapAsync(BootstrapUri, CancellationToken.None));
+
+        Assert.Contains("перенаправление", exception.UserMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(handler.RequestUris);
+    }
+
+    [Fact]
+    public async Task GetBootstrapAsync_RejectsRedirectLoopAfterFiveRedirects()
+    {
+        (LauncherServerClient client, RecordingHttpMessageHandler handler) = CreateClient(
+            (_, _) => Redirect(302, "/loop/bootstrap.json"));
+
+        ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetBootstrapAsync(BootstrapUri, CancellationToken.None));
+
+        Assert.Contains("слишком много", exception.UserMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(6, handler.RequestUris.Count);
+    }
+
+    [Fact]
     public async Task GetBootstrapAsync_MapsNotFoundToFriendlyError()
     {
         LauncherServerClient client = CreateClient(new HttpResponseMessage(HttpStatusCode.NotFound));
@@ -98,7 +223,7 @@ public sealed class LauncherServerClientTests
         ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
             () => client.GetBootstrapAsync(BootstrapUri, CancellationToken.None));
 
-        Assert.Contains("404", exception.UserMessage, StringComparison.Ordinal);
+        Assert.Contains("Сервер не найден", exception.UserMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -109,7 +234,7 @@ public sealed class LauncherServerClientTests
         ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
             () => client.GetBootstrapAsync(BootstrapUri, CancellationToken.None));
 
-        Assert.Contains("слишком большой", exception.UserMessage, StringComparison.Ordinal);
+        Assert.Contains("слишком большая", exception.UserMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -124,6 +249,30 @@ public sealed class LauncherServerClientTests
         Assert.Equal("fabric", profile.LoaderType);
         Assert.Equal("https://example.test/launcher/packs/main/manifest.json", profile.ManifestUrl.AbsoluteUri);
         Assert.Equal((ushort)25565, profile.ServerPort);
+    }
+
+    [Fact]
+    public async Task GetProfilesAsync_ResolvesManifestAgainstRedirectedProfilesUri()
+    {
+        Uri redirectedUri = new("https://cdn.example.test/config/profiles.json");
+        string redirectedProfiles = ValidProfilesJson.Replace(
+            "/launcher/packs/main/manifest.json",
+            "pack.json",
+            StringComparison.Ordinal);
+        (LauncherServerClient client, RecordingHttpMessageHandler handler) = CreateClient(
+            (_, requestNumber) => requestNumber == 1
+                ? Redirect(302, redirectedUri.AbsoluteUri)
+                : Json(redirectedProfiles));
+
+        IReadOnlyList<GameProfile> profiles = await client.GetProfilesAsync(
+            Bootstrap(),
+            CancellationToken.None);
+
+        GameProfile profile = Assert.Single(profiles);
+        Assert.Equal(
+            "https://cdn.example.test/config/pack.json",
+            profile.ManifestUrl.AbsoluteUri);
+        Assert.Equal([Bootstrap().ProfilesUri, redirectedUri], handler.RequestUris);
     }
 
     [Fact]
@@ -167,6 +316,36 @@ public sealed class LauncherServerClientTests
             () => client.GetProfilesAsync(Bootstrap(), CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData("../escape")]
+    [InlineData("folder/profile")]
+    [InlineData("folder\\profile")]
+    public async Task GetProfilesAsync_RejectsUnsafeProfileId(string profileId)
+    {
+        string json = ValidProfilesJson.Replace("\"id\": \"main\"", $"\"id\": \"{profileId.Replace("\\", "\\\\", StringComparison.Ordinal)}\"", StringComparison.Ordinal);
+        LauncherServerClient client = CreateClient(Json(json));
+
+        await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetProfilesAsync(Bootstrap(), CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("\"javaPath\":\"C:\\\\Java\\\\javaw.exe\"")]
+    [InlineData("\"jvmArgs\":[\"-agentlib:jdwp=transport=dt_socket\"]")]
+    [InlineData("\"executable\":\"https://example.test/java.exe\"")]
+    [InlineData("\"instancePath\":\"C:\\\\Users\\\\Public\"")]
+    public async Task GetProfilesAsync_RejectsUnknownLaunchControlFields(string unknownField)
+    {
+        string json = ValidProfilesJson.Replace(
+            "\"serverPort\": 25565",
+            $"\"serverPort\": 25565, {unknownField}",
+            StringComparison.Ordinal);
+        LauncherServerClient client = CreateClient(Json(json));
+
+        await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetProfilesAsync(Bootstrap(), CancellationToken.None));
+    }
+
     [Fact]
     public async Task GetProfilesAsync_RejectsUnknownLengthResponseAboveOneMegabyte()
     {
@@ -179,7 +358,7 @@ public sealed class LauncherServerClientTests
         ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
             () => client.GetProfilesAsync(Bootstrap(), CancellationToken.None));
 
-        Assert.Contains("слишком большой", exception.UserMessage, StringComparison.Ordinal);
+        Assert.Contains("слишком большая", exception.UserMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -190,7 +369,7 @@ public sealed class LauncherServerClientTests
         ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
             () => client.GetProfilesAsync(Bootstrap(), CancellationToken.None));
 
-        Assert.Contains("слишком большой", exception.UserMessage, StringComparison.Ordinal);
+        Assert.Contains("слишком большая", exception.UserMessage, StringComparison.Ordinal);
     }
 
     private static BootstrapConfiguration Bootstrap() => new(
@@ -204,6 +383,21 @@ public sealed class LauncherServerClientTests
     {
         HttpClient httpClient = new(new StubHttpMessageHandler(response));
         return new LauncherServerClient(httpClient, new NullAppLogger());
+    }
+
+    private static (LauncherServerClient Client, RecordingHttpMessageHandler Handler) CreateClient(
+        Func<Uri, int, HttpResponseMessage> responder)
+    {
+        RecordingHttpMessageHandler handler = new(responder);
+        HttpClient httpClient = new(handler);
+        return (new LauncherServerClient(httpClient, new NullAppLogger()), handler);
+    }
+
+    private static HttpResponseMessage Redirect(int statusCode, string location)
+    {
+        HttpResponseMessage response = new((HttpStatusCode)statusCode);
+        response.Headers.Location = new Uri(location, UriKind.RelativeOrAbsolute);
+        return response;
     }
 
     private static HttpResponseMessage Json(string json) => new(HttpStatusCode.OK)
@@ -269,6 +463,28 @@ public sealed class LauncherServerClientTests
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken) => Task.FromResult(_response);
+    }
+
+    private sealed class RecordingHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly Func<Uri, int, HttpResponseMessage> _responder;
+
+        public RecordingHttpMessageHandler(Func<Uri, int, HttpResponseMessage> responder)
+        {
+            _responder = responder;
+        }
+
+        public List<Uri> RequestUris { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Uri requestUri = request.RequestUri ?? throw new InvalidOperationException(
+                "Test request did not contain an absolute URI.");
+            RequestUris.Add(requestUri);
+            return Task.FromResult(_responder(requestUri, RequestUris.Count));
+        }
     }
 
     private sealed class UnknownLengthContent : HttpContent

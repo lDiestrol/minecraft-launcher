@@ -4,11 +4,24 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Launcher.ico</ApplicationIcon>
     <AssemblyName>MinecraftLauncher</AssemblyName>
     <RootNamespace>Launcher.App</RootNamespace>
+    <StartupObject>Launcher.App.Program</StartupObject>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Launcher.Core\Launcher.Core.csproj" />
     <ProjectReference Include="..\Launcher.Infrastructure\Launcher.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Assets\Launcher.ico" />
+    <Resource Include="Assets\Launcher.png" />
+    <None Include="Assets\Launcher.svg" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Velopack" Version="1.2.158" />
   </ItemGroup>
 </Project>

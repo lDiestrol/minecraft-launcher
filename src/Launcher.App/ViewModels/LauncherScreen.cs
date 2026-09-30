@@ -4,4 +4,5 @@ public enum LauncherScreen
 {
     Onboarding,
     Main,
+    Settings,
 }

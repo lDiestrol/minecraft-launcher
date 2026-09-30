@@ -11,9 +11,21 @@ public static class ButtonAssist
         typeof(ButtonAssist),
         new FrameworkPropertyMetadata(Brushes.Transparent));
 
+    public static readonly DependencyProperty PressedBackgroundProperty = DependencyProperty.RegisterAttached(
+        "PressedBackground",
+        typeof(Brush),
+        typeof(ButtonAssist),
+        new FrameworkPropertyMetadata(Brushes.Transparent));
+
     public static Brush GetHoverBackground(DependencyObject element) =>
         (Brush)element.GetValue(HoverBackgroundProperty);
 
     public static void SetHoverBackground(DependencyObject element, Brush value) =>
         element.SetValue(HoverBackgroundProperty, value);
+
+    public static Brush GetPressedBackground(DependencyObject element) =>
+        (Brush)element.GetValue(PressedBackgroundProperty);
+
+    public static void SetPressedBackground(DependencyObject element, Brush value) =>
+        element.SetValue(PressedBackgroundProperty, value);
 }
