@@ -39,7 +39,7 @@ public partial class App : Application
                 AllowAutoRedirect = false,
             })
             {
-                Timeout = TimeSpan.FromSeconds(10),
+                Timeout = Timeout.InfiniteTimeSpan,
             };
             _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"MinecraftLauncher/{LauncherVersion.Current}");
 
@@ -49,7 +49,7 @@ public partial class App : Application
                 UseCookies = false,
             })
             {
-                Timeout = TimeSpan.FromMinutes(10),
+                Timeout = Timeout.InfiniteTimeSpan,
             };
             _packHttpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"MinecraftLauncher/{LauncherVersion.Current}");
 
@@ -93,6 +93,7 @@ public partial class App : Application
             _logger.Info("Main window shown.");
 
             await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+            _ = viewModel.CheckForUpdatesOnStartupAsync();
             await viewModel.AutoConnectAsync();
         }
         catch (Exception exception)

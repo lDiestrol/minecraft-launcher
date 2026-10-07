@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -19,16 +20,32 @@ public sealed class PackSyncService : IPackSyncService
     private readonly ValidatedHttpClient _http;
     private readonly LauncherDataPaths _paths;
     private readonly IAppLogger _logger;
+    private readonly TimeSpan _metadataTimeout;
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
     {
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 
     public PackSyncService(HttpClient httpClient, LauncherDataPaths paths, IAppLogger logger)
+        : this(httpClient, paths, logger, LauncherHttpTimeouts.Metadata)
     {
+    }
+
+    internal PackSyncService(
+        HttpClient httpClient,
+        LauncherDataPaths paths,
+        IAppLogger logger,
+        TimeSpan metadataTimeout)
+    {
+        if (metadataTimeout <= TimeSpan.Zero || metadataTimeout == Timeout.InfiniteTimeSpan)
+        {
+            throw new ArgumentOutOfRangeException(nameof(metadataTimeout));
+        }
+
         _http = new ValidatedHttpClient(httpClient);
         _paths = paths;
         _logger = logger;
+        _metadataTimeout = metadataTimeout;
     }
 
     public async Task<PackSyncResult> SyncAsync(
@@ -187,24 +204,28 @@ public sealed class PackSyncService : IPackSyncService
 
     private async Task<PackManifest> FetchManifestAsync(GameProfile profile, CancellationToken cancellationToken)
     {
-        using ValidatedHttpResponse downloaded = await _http.GetAsync(
-            profile.ManifestUrl,
-            "pack manifest",
+        using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken);
-        if (!downloaded.Response.IsSuccessStatusCode)
-        {
-            throw new PackSyncException(
-                PackSyncError.ManifestUnavailable,
-                "Manifest сборки недоступен.",
-                $"HTTP {(int)downloaded.Response.StatusCode} for manifest {downloaded.FinalUri}.");
-        }
-
-        string json = await ReadLimitedTextAsync(
-            downloaded.Response.Content,
-            downloaded.FinalUri,
-            cancellationToken);
+        timeoutSource.CancelAfter(_metadataTimeout);
+        Stopwatch elapsed = Stopwatch.StartNew();
         try
         {
+            using ValidatedHttpResponse downloaded = await _http.GetAsync(
+                profile.ManifestUrl,
+                "pack manifest",
+                timeoutSource.Token);
+            if (!downloaded.Response.IsSuccessStatusCode)
+            {
+                throw new PackSyncException(
+                    PackSyncError.ManifestUnavailable,
+                    "Manifest сборки недоступен.",
+                    $"HTTP {(int)downloaded.Response.StatusCode} for manifest {downloaded.FinalUri}.");
+            }
+
+            string json = await ReadLimitedTextAsync(
+                downloaded.Response.Content,
+                downloaded.FinalUri,
+                timeoutSource.Token);
             ManifestDto? document = JsonSerializer.Deserialize<ManifestDto>(json, _jsonOptions);
             if (document is null)
             {
@@ -219,6 +240,23 @@ public sealed class PackSyncService : IPackSyncService
                 PackSyncError.ManifestInvalid,
                 "Сервер вернул некорректный manifest сборки.",
                 "Invalid pack manifest JSON.",
+                exception);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException exception) when (timeoutSource.IsCancellationRequested)
+        {
+            _logger.Error(
+                $"HTTP metadata timeout for manifest at {profile.ManifestUrl}: " +
+                $"elapsed={elapsed.Elapsed.TotalSeconds:0.###}s, timeout={_metadataTimeout.TotalSeconds:0.###}s.",
+                exception);
+            throw Failure(
+                PackSyncError.ManifestUnavailable,
+                "Сервер отвечает слишком долго. Проверьте соединение, VPN или попробуйте ещё раз.",
+                $"HTTP metadata timeout for manifest {profile.ManifestUrl} after " +
+                $"{elapsed.Elapsed.TotalSeconds:0.###} seconds.",
                 exception);
         }
     }

@@ -19,6 +19,61 @@ public sealed class PackSyncServiceTests
     private static readonly byte[] FileB = Encoding.UTF8.GetBytes("official-b");
 
     [Fact]
+    public async Task SyncAsync_MapsManifestMetadataTimeoutToFriendlyError()
+    {
+        using TestDirectory directory = new();
+        AsyncTestHandler handler = new(async (_, cancellationToken) =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("The delay should have been cancelled.");
+        });
+        using HttpClient httpClient = new(handler) { Timeout = Timeout.InfiniteTimeSpan };
+        PackSyncService service = new(
+            httpClient,
+            new LauncherDataPaths(directory.Path),
+            new NullAppLogger(),
+            TimeSpan.FromMilliseconds(30));
+
+        PackSyncException exception = await Assert.ThrowsAsync<PackSyncException>(
+            () => service.SyncAsync(Profile(), Progress(), CancellationToken.None));
+
+        Assert.Equal(PackSyncError.ManifestUnavailable, exception.Error);
+        Assert.Contains("слишком долго", exception.UserMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("VPN", exception.UserMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SyncAsync_PayloadTransferDoesNotInheritMetadataTimeout()
+    {
+        using TestDirectory directory = new();
+        FileDefinition file = File("mods/a.jar", FileA);
+        AsyncTestHandler handler = new(async (uri, cancellationToken) =>
+        {
+            if (uri == ManifestUri)
+            {
+                return Json(Manifest(file));
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(80), cancellationToken);
+            return Bytes(FileA);
+        });
+        using HttpClient httpClient = new(handler) { Timeout = Timeout.InfiniteTimeSpan };
+        PackSyncService service = new(
+            httpClient,
+            new LauncherDataPaths(directory.Path),
+            new NullAppLogger(),
+            TimeSpan.FromMilliseconds(30));
+
+        PackSyncResult result = await service.SyncAsync(
+            Profile(),
+            Progress(),
+            CancellationToken.None);
+
+        Assert.Equal(1, result.DownloadedFiles);
+        Assert.Equal(FileA, await IOFile.ReadAllBytesAsync(ManagedPath(directory, "mods/a.jar")));
+    }
+
+    [Fact]
     public async Task SyncAsync_DownloadsValidManifestFilesAndWritesState()
     {
         using TestDirectory directory = new();
@@ -636,6 +691,19 @@ public sealed class PackSyncServiceTests
             Uri uri = request.RequestUri ?? throw new InvalidOperationException("Request URI is missing.");
             RequestUris.Add(uri);
             return Task.FromResult(_responder(uri, RequestUris.Count));
+        }
+    }
+
+    private sealed class AsyncTestHandler(
+        Func<Uri, CancellationToken, Task<HttpResponseMessage>> responder)
+        : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Uri uri = request.RequestUri ?? throw new InvalidOperationException("Request URI is missing.");
+            return responder(uri, cancellationToken);
         }
     }
 

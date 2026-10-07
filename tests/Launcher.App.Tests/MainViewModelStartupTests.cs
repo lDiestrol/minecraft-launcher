@@ -87,19 +87,162 @@ public sealed class MainViewModelStartupTests
         Assert.True(viewModel.OpenSettingsCommand.CanExecute(null));
     }
 
-    private static MainViewModel CreateViewModel(LauncherSettings settings, StubServerClient serverClient)
+    [Fact]
+    public async Task StartupUpdateCheck_WithPendingResponse_DoesNotBlockAutoConnect()
+    {
+        TaskCompletionSource<LauncherUpdateInfo?> pendingUpdate = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        StubUpdateService updateService = new()
+        {
+            CheckTask = pendingUpdate.Task,
+        };
+        StubServerClient serverClient = new()
+        {
+            BootstrapResult = Bootstrap(),
+            ProfilesResult = [Profile()],
+        };
+        MainViewModel viewModel = CreateViewModel(SavedSettings(), serverClient, updateService);
+        await viewModel.InitializeAsync();
+
+        Task updateCheck = viewModel.CheckForUpdatesOnStartupAsync();
+
+        Assert.False(updateCheck.IsCompleted);
+        Assert.False(viewModel.IsBusy);
+
+        await viewModel.AutoConnectAsync();
+
+        Assert.Equal(LauncherScreen.Main, viewModel.Screen);
+        Assert.Equal("Готово", viewModel.StatusText);
+
+        pendingUpdate.SetResult(null);
+        await updateCheck;
+    }
+
+    [Fact]
+    public async Task StartupUpdateCheck_WithoutUpdate_IsSilent()
+    {
+        StubUpdateService updateService = new();
+        MainViewModel viewModel = CreateViewModel(new LauncherSettings(), new StubServerClient(), updateService);
+        string initialStatus = viewModel.UpdateStatusText;
+
+        await viewModel.CheckForUpdatesOnStartupAsync();
+
+        Assert.False(viewModel.IsUpdateOfferVisible);
+        Assert.False(viewModel.HasAvailableUpdate);
+        Assert.Equal(initialStatus, viewModel.UpdateStatusText);
+        Assert.Equal(1, updateService.CheckCalls);
+    }
+
+    [Fact]
+    public async Task StartupUpdateCheck_WithAvailableUpdate_ShowsDismissibleOffer()
+    {
+        StubUpdateService updateService = new()
+        {
+            CheckResult = new LauncherUpdateInfo("0.6.0-rc.1"),
+        };
+        MainViewModel viewModel = CreateViewModel(new LauncherSettings(), new StubServerClient(), updateService);
+
+        await viewModel.CheckForUpdatesOnStartupAsync();
+
+        Assert.True(viewModel.IsUpdateOfferVisible);
+        Assert.True(viewModel.IsUpdateOfferDownloadVisible);
+        Assert.False(viewModel.IsUpdateOfferApplyVisible);
+        Assert.Equal("Доступна новая версия 0.6.0-rc.1", viewModel.UpdateOfferText);
+
+        viewModel.DismissUpdateOfferCommand.Execute(null);
+
+        Assert.False(viewModel.IsUpdateOfferVisible);
+        Assert.True(viewModel.HasAvailableUpdate);
+    }
+
+    [Fact]
+    public async Task StartupUpdateCheck_WithFailure_IsSilentAndLauncherRemainsUsable()
+    {
+        StubUpdateService updateService = new()
+        {
+            CheckException = new LauncherUpdateException(
+                LauncherUpdateError.CheckFailed,
+                "Не удалось проверить обновления.",
+                "Test update failure."),
+        };
+        StubLogger logger = new();
+        StubServerClient serverClient = new()
+        {
+            BootstrapResult = Bootstrap(),
+            ProfilesResult = [Profile()],
+        };
+        MainViewModel viewModel = CreateViewModel(SavedSettings(), serverClient, updateService, logger);
+        await viewModel.InitializeAsync();
+        string initialStatus = viewModel.UpdateStatusText;
+
+        await viewModel.CheckForUpdatesOnStartupAsync();
+        await viewModel.AutoConnectAsync();
+
+        Assert.False(viewModel.IsUpdateOfferVisible);
+        Assert.Equal(initialStatus, viewModel.UpdateStatusText);
+        Assert.Equal(LauncherScreen.Main, viewModel.Screen);
+        Assert.Contains(
+            logger.InfoMessages,
+            message => message.StartsWith("Automatic update check failed:", StringComparison.Ordinal));
+        Assert.Equal(0, logger.ErrorCalls);
+    }
+
+    [Fact]
+    public async Task ManualUpdateCheck_WithoutUpdate_ShowsExplicitResult()
+    {
+        StubUpdateService updateService = new();
+        MainViewModel viewModel = CreateViewModel(new LauncherSettings(), new StubServerClient(), updateService);
+
+        await viewModel.CheckForUpdatesManuallyAsync();
+
+        Assert.Equal("Установлена актуальная версия.", viewModel.UpdateStatusText);
+        Assert.False(viewModel.IsUpdateOfferVisible);
+        Assert.Equal(1, updateService.CheckCalls);
+    }
+
+    [Fact]
+    public async Task ConcurrentStartupAndManualChecks_ShareOneRequestAndOneOffer()
+    {
+        TaskCompletionSource<LauncherUpdateInfo?> pendingUpdate = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        StubUpdateService updateService = new()
+        {
+            CheckTask = pendingUpdate.Task,
+        };
+        MainViewModel viewModel = CreateViewModel(new LauncherSettings(), new StubServerClient(), updateService);
+
+        Task startupCheck = viewModel.CheckForUpdatesOnStartupAsync();
+        Task manualCheck = viewModel.CheckForUpdatesManuallyAsync();
+
+        Assert.Equal(1, updateService.CheckCalls);
+
+        pendingUpdate.SetResult(new LauncherUpdateInfo("0.6.0-rc.1"));
+        await Task.WhenAll(startupCheck, manualCheck);
+
+        Assert.Equal(1, updateService.CheckCalls);
+        Assert.True(viewModel.IsUpdateOfferVisible);
+        Assert.Equal("Доступна новая версия 0.6.0-rc.1", viewModel.UpdateOfferText);
+    }
+
+    private static MainViewModel CreateViewModel(
+        LauncherSettings settings,
+        StubServerClient serverClient,
+        StubUpdateService? updateService = null,
+        StubLogger? logger = null)
     {
         LauncherOperationCoordinator operationCoordinator = new(
             new UnusedPackSyncService(),
             new UnusedGameLaunchService());
-        LauncherUpdateCoordinator updateCoordinator = new(new StubUpdateService(), operationCoordinator);
+        LauncherUpdateCoordinator updateCoordinator = new(
+            updateService ?? new StubUpdateService(),
+            operationCoordinator);
         return new MainViewModel(
             serverClient,
             new StubSettingsStore(settings),
             new StubMemoryProvider(),
             operationCoordinator,
             updateCoordinator,
-            new StubLogger());
+            logger ?? new StubLogger());
     }
 
     private static LauncherSettings SavedSettings() => new()
@@ -168,14 +311,30 @@ public sealed class MainViewModelStartupTests
 
     private sealed class StubUpdateService : ILauncherUpdateService
     {
+        public int CheckCalls { get; private set; }
+
+        public LauncherUpdateInfo? CheckResult { get; init; }
+
+        public Task<LauncherUpdateInfo?>? CheckTask { get; init; }
+
+        public Exception? CheckException { get; init; }
+
         public string CurrentVersion => LauncherVersion.Current;
 
         public bool IsInstalled => true;
 
         public bool IsPortable => false;
 
-        public Task<LauncherUpdateInfo?> CheckForUpdatesAsync(CancellationToken cancellationToken) =>
-            Task.FromResult<LauncherUpdateInfo?>(null);
+        public Task<LauncherUpdateInfo?> CheckForUpdatesAsync(CancellationToken cancellationToken)
+        {
+            CheckCalls++;
+            if (CheckException is not null)
+            {
+                return Task.FromException<LauncherUpdateInfo?>(CheckException);
+            }
+
+            return CheckTask ?? Task.FromResult(CheckResult);
+        }
 
         public Task DownloadUpdateAsync(
             LauncherUpdateInfo update,
@@ -205,12 +364,18 @@ public sealed class MainViewModelStartupTests
 
     private sealed class StubLogger : IAppLogger
     {
+        public List<string> InfoMessages { get; } = [];
+
+        public int ErrorCalls { get; private set; }
+
         public void Info(string message)
         {
+            InfoMessages.Add(message);
         }
 
         public void Error(string message, Exception? exception = null)
         {
+            ErrorCalls++;
         }
     }
 }

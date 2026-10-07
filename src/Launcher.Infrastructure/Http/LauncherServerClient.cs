@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -16,15 +17,30 @@ public sealed class LauncherServerClient : ILauncherServerClient
     private const int MaximumRedirects = 5;
     private readonly HttpClient _httpClient;
     private readonly IAppLogger _logger;
+    private readonly TimeSpan _metadataTimeout;
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
     {
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 
     public LauncherServerClient(HttpClient httpClient, IAppLogger logger)
+        : this(httpClient, logger, LauncherHttpTimeouts.Metadata)
     {
+    }
+
+    internal LauncherServerClient(
+        HttpClient httpClient,
+        IAppLogger logger,
+        TimeSpan metadataTimeout)
+    {
+        if (metadataTimeout <= TimeSpan.Zero || metadataTimeout == Timeout.InfiniteTimeSpan)
+        {
+            throw new ArgumentOutOfRangeException(nameof(metadataTimeout));
+        }
+
         _httpClient = httpClient;
         _logger = logger;
+        _metadataTimeout = metadataTimeout;
     }
 
     public async Task<BootstrapConfiguration> GetBootstrapAsync(
@@ -134,6 +150,10 @@ public sealed class LauncherServerClient : ILauncherServerClient
         CancellationToken cancellationToken)
     {
         Uri currentUri = uri;
+        using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken);
+        timeoutSource.CancelAfter(_metadataTimeout);
+        Stopwatch elapsed = Stopwatch.StartNew();
         try
         {
             for (int redirectCount = 0; ;)
@@ -147,7 +167,7 @@ public sealed class LauncherServerClient : ILauncherServerClient
                 using HttpResponseMessage response = await _httpClient.SendAsync(
                     request,
                     HttpCompletionOption.ResponseHeadersRead,
-                    cancellationToken);
+                    timeoutSource.Token);
 
                 if (IsRedirectStatusCode(response.StatusCode))
                 {
@@ -176,7 +196,7 @@ public sealed class LauncherServerClient : ILauncherServerClient
                     currentUri,
                     documentName,
                     maximumBytes,
-                    cancellationToken);
+                    timeoutSource.Token);
                 if (string.IsNullOrWhiteSpace(content))
                 {
                     throw new ServerConnectionException(
@@ -191,12 +211,20 @@ public sealed class LauncherServerClient : ILauncherServerClient
         {
             throw;
         }
-        catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _logger.Error($"HTTP timeout for {currentUri}.", exception);
+            throw;
+        }
+        catch (OperationCanceledException exception) when (timeoutSource.IsCancellationRequested)
+        {
+            _logger.Error(
+                $"HTTP metadata timeout for {documentName} at {currentUri}: " +
+                $"elapsed={elapsed.Elapsed.TotalSeconds:0.###}s, timeout={_metadataTimeout.TotalSeconds:0.###}s.",
+                exception);
             throw new ServerConnectionException(
-                "Сервер не ответил вовремя. Проверьте адрес и повторите попытку.",
-                $"HTTP timeout for {currentUri}.",
+                "Сервер отвечает слишком долго. Проверьте соединение, VPN или попробуйте ещё раз.",
+                $"HTTP metadata timeout for {documentName} at {currentUri} after " +
+                $"{elapsed.Elapsed.TotalSeconds:0.###} seconds.",
                 exception);
         }
         catch (HttpRequestException exception)

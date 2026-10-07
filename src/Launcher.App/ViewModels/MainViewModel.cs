@@ -45,6 +45,7 @@ public sealed class MainViewModel : ObservableObject
     private double _updateProgressValue;
     private bool _isUpdateProgressVisible;
     private bool _isUpdateDownloaded;
+    private bool _isUpdateOfferDismissed;
 
     public MainViewModel(
         ILauncherServerClient serverClient,
@@ -70,13 +71,16 @@ public sealed class MainViewModel : ObservableObject
         OpenSettingsCommand = new RelayCommand(OpenSettings, () => !IsBusy);
         CancelSettingsCommand = new RelayCommand(CancelSettings, () => !IsBusy);
         ChangeServerCommand = new RelayCommand(BeginServerChange, () => !IsBusy);
-        CheckForUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync, () => !IsBusy && _updateCoordinator.IsInstalled);
+        CheckForUpdatesCommand = new AsyncRelayCommand(
+            CheckForUpdatesManuallyAsync,
+            () => !IsBusy && _updateCoordinator.IsInstalled);
         DownloadUpdateCommand = new AsyncRelayCommand(
             DownloadUpdateAsync,
             () => !IsBusy && _availableUpdate is not null && !IsUpdateDownloaded);
         ApplyUpdateCommand = new RelayCommand(
             ApplyUpdateAndRestart,
             () => !IsBusy && _availableUpdate is not null && IsUpdateDownloaded);
+        DismissUpdateOfferCommand = new RelayCommand(DismissUpdateOffer, () => !IsBusy);
 
         UpdateStatusText = _updateCoordinator.IsPortable
             ? "Portable-режим: проверка обновлений выполняется вручную."
@@ -109,6 +113,8 @@ public sealed class MainViewModel : ObservableObject
 
     public RelayCommand ApplyUpdateCommand { get; }
 
+    public RelayCommand DismissUpdateOfferCommand { get; }
+
     public string UpdateStatusText
     {
         get => _updateStatusText;
@@ -129,6 +135,16 @@ public sealed class MainViewModel : ObservableObject
 
     public bool HasAvailableUpdate => _availableUpdate is not null;
 
+    public bool IsUpdateOfferVisible => HasAvailableUpdate && !_isUpdateOfferDismissed;
+
+    public bool IsUpdateOfferDownloadVisible => IsUpdateOfferVisible && !IsUpdateDownloaded;
+
+    public bool IsUpdateOfferApplyVisible => IsUpdateOfferVisible && IsUpdateDownloaded;
+
+    public string UpdateOfferText => _availableUpdate is null
+        ? string.Empty
+        : $"Доступна новая версия {_availableUpdate.Version}";
+
     public bool IsUpdateDownloaded
     {
         get => _isUpdateDownloaded;
@@ -138,6 +154,8 @@ public sealed class MainViewModel : ObservableObject
             {
                 DownloadUpdateCommand.RaiseCanExecuteChanged();
                 ApplyUpdateCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(IsUpdateOfferDownloadVisible));
+                OnPropertyChanged(nameof(IsUpdateOfferApplyVisible));
             }
         }
     }
@@ -259,6 +277,7 @@ public sealed class MainViewModel : ObservableObject
                 CheckForUpdatesCommand.RaiseCanExecuteChanged();
                 DownloadUpdateCommand.RaiseCanExecuteChanged();
                 ApplyUpdateCommand.RaiseCanExecuteChanged();
+                DismissUpdateOfferCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -384,6 +403,41 @@ public sealed class MainViewModel : ObservableObject
         ? Task.CompletedTask
         : ConnectAsync();
 
+    public async Task CheckForUpdatesOnStartupAsync()
+    {
+        if (!_updateCoordinator.IsInstalled)
+        {
+            _logger.Info("Automatic update check skipped: Launcher is not installed.");
+            return;
+        }
+
+        _logger.Info("Automatic update check started.");
+        try
+        {
+            LauncherUpdateInfo? update = await _updateCoordinator.CheckForUpdatesAsync(
+                CancellationToken.None);
+            if (update is null)
+            {
+                _logger.Info("Automatic update check completed: no update.");
+                return;
+            }
+
+            SetAvailableUpdate(update);
+            UpdateStatusText = $"Доступна версия {update.Version}.";
+            _logger.Info(
+                $"Automatic update available: current={_updateCoordinator.CurrentVersion}, " +
+                $"available={update.Version}.");
+        }
+        catch (LauncherUpdateException exception)
+        {
+            _logger.Info($"Automatic update check failed: {exception.UserMessage}");
+        }
+        catch (Exception exception)
+        {
+            _logger.Error("Automatic update check failed unexpectedly.", exception);
+        }
+    }
+
     private async Task ConnectAsync()
     {
         ErrorText = null;
@@ -500,7 +554,7 @@ public sealed class MainViewModel : ObservableObject
         StatusText = "Ожидание";
     }
 
-    private async Task CheckForUpdatesAsync()
+    public async Task CheckForUpdatesManuallyAsync()
     {
         IsBusy = true;
         UpdateStatusText = "Проверка обновлений...";
@@ -603,8 +657,20 @@ public sealed class MainViewModel : ObservableObject
     {
         _availableUpdate = update;
         OnPropertyChanged(nameof(HasAvailableUpdate));
+        OnPropertyChanged(nameof(IsUpdateOfferVisible));
+        OnPropertyChanged(nameof(IsUpdateOfferDownloadVisible));
+        OnPropertyChanged(nameof(IsUpdateOfferApplyVisible));
+        OnPropertyChanged(nameof(UpdateOfferText));
         DownloadUpdateCommand.RaiseCanExecuteChanged();
         ApplyUpdateCommand.RaiseCanExecuteChanged();
+    }
+
+    private void DismissUpdateOffer()
+    {
+        _isUpdateOfferDismissed = true;
+        OnPropertyChanged(nameof(IsUpdateOfferVisible));
+        OnPropertyChanged(nameof(IsUpdateOfferDownloadVisible));
+        OnPropertyChanged(nameof(IsUpdateOfferApplyVisible));
     }
 
     private async Task PlayAsync()

@@ -6,7 +6,7 @@
 
 `Launcher.Infrastructure` зависит только от Core и реализует:
 
-- загрузку bootstrap/profiles через один долгоживущий `HttpClient`;
+- загрузку bootstrap/profiles через один долгоживущий `HttpClient` с отдельным 30-секундным budget для каждого metadata request;
 - JSON parsing и валидацию Server Protocol v1;
 - хранение settings в per-user каталоге;
 - файловый лог;
@@ -61,7 +61,7 @@ server profile
 
 ## Pack sync и managed state
 
-`PackSyncService` получает manifest и pack files через отдельный `HttpClient` с `AllowAutoRedirect = false`. Redirects выполняются вручную; каждый target проверяется до request. Существующие manifest-файлы всегда хешируются, затем вычисляется линейный план downloads и obsolete paths через `HashSet` с `OrdinalIgnoreCase`.
+`PackSyncService` получает manifest и pack files через отдельный `HttpClient` с `AllowAutoRedirect = false`. Redirects выполняются вручную; каждый target проверяется до request. Bootstrap, profiles и manifest имеют 30-секундный metadata timeout с отдельным дружелюбным сообщением; cancellation вызывающего кода остаётся cancellation. Этот короткий budget не применяется к потоковой загрузке pack files: она ограничивается caller cancellation и проверками size/SHA-256. Существующие manifest-файлы всегда хешируются, затем вычисляется линейный план downloads и obsolete paths через `HashSet` с `OrdinalIgnoreCase`.
 
 Downloads идут последовательно и потоково в `instances/<profile-id>/.launcher/staging/<operation-id>`. После exact size/SHA-256 verification применяется same-volume `File.Move` или `File.Replace`. Obsolete cleanup касается только путей предыдущего valid `managed-state.json`; unmanaged files не перечисляются и не удаляются. State записывается временным файлом с flush и атомарной заменой только после успешного sync. Подробный контракт: [pack-manifest.md](pack-manifest.md).
 
@@ -77,7 +77,7 @@ application install root        assets/libraries/runtime       instances/<profil
 
 Launcher Application Update меняет только установленное приложение под `%LOCALAPPDATA%\lDiestrol.MinecraftLauncher`. Game Runtime Preparation управляет Minecraft, Fabric, Java, assets и libraries. Pack Synchronization управляет только заявленными сервером файлами сборки в profile instance. Эти механизмы не объединены и не передают друг другу источники или команды.
 
-`ILauncherUpdateService` и собственные Core-модели не содержат типов Velopack. Framework startup hook находится в explicit `Program.Main` и вызывается до WPF startup. UI выполняет только ручную проверку; download/apply блокируются, пока активны Play, Pack Sync или Repair. Apply/restart происходит только по явной команде пользователя.
+`ILauncherUpdateService` и собственные Core-модели не содержат типов Velopack. Framework startup hook находится в explicit `Program.Main` и вызывается до WPF startup. После показа `MainWindow` Launcher неблокирующе запускает проверку обновления: отсутствие update и сетевой сбой не меняют основной UI, а найденная версия показывается ненавязчивым banner с действиями «Обновить» и «Позже». Ручная проверка в Settings остаётся доступной и показывает явный результат. Параллельные startup/manual checks разделяют один запрос; download/apply блокируются, пока активны Play, Pack Sync или Repair. Download не начинается автоматически, а apply/restart происходит только по явной команде пользователя.
 
 Production source жёстко принадлежит приложению: `https://github.com/lDiestrol/minecraft-launcher`, без PAT/token и произвольного URL. Installed channel берётся из Velopack package metadata. Ошибка source не блокирует startup или игровые операции.
 

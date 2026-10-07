@@ -47,7 +47,7 @@ public sealed class VelopackLauncherUpdateService : ILauncherUpdateService
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _logger.Info("Checking GitHub Releases for a Launcher update.");
+            _logger.Info("Update check started.");
             UpdateInfo? update = await _updateManager.CheckForUpdatesAsync();
             cancellationToken.ThrowIfCancellationRequested();
             _availableUpdate = update;
@@ -55,12 +55,12 @@ public sealed class VelopackLauncherUpdateService : ILauncherUpdateService
 
             if (update is null)
             {
-                _logger.Info("No Launcher update is available.");
+                _logger.Info("Update check completed: no update.");
                 return null;
             }
 
             string version = update.TargetFullRelease.Version.ToString();
-            _logger.Info($"Launcher update {version} is available.");
+            _logger.Info($"Update available: current={CurrentVersion}, available={version}.");
             return new LauncherUpdateInfo(version);
         }
         catch (OperationCanceledException)

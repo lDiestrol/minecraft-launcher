@@ -12,6 +12,82 @@ public sealed class LauncherServerClientTests
     private static readonly Uri BootstrapUri = new("https://example.test/launcher/bootstrap.json");
 
     [Fact]
+    public void MetadataTimeout_DefaultsToThirtySeconds()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(30), LauncherHttpTimeouts.Metadata);
+    }
+
+    [Fact]
+    public async Task GetBootstrapAsync_AllowsResponseBeyondScaledLegacyTimeout()
+    {
+        using HttpClient httpClient = new(new AsyncHttpMessageHandler(async (_, cancellationToken) =>
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(30), cancellationToken);
+            return Json("""
+                {"schemaVersion":1,"serverName":"Slow Server","profilesUrl":"/profiles.json"}
+                """);
+        }))
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        LauncherServerClient client = new(
+            httpClient,
+            new NullAppLogger(),
+            TimeSpan.FromMilliseconds(200));
+
+        BootstrapConfiguration result = await client.GetBootstrapAsync(
+            BootstrapUri,
+            CancellationToken.None);
+
+        Assert.Equal("Slow Server", result.ServerName);
+    }
+
+    [Fact]
+    public async Task GetBootstrapAsync_MapsMetadataTimeoutToFriendlyDomainError()
+    {
+        using HttpClient httpClient = new(new AsyncHttpMessageHandler(async (_, cancellationToken) =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("The delay should have been cancelled.");
+        }))
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        LauncherServerClient client = new(
+            httpClient,
+            new NullAppLogger(),
+            TimeSpan.FromMilliseconds(30));
+
+        ServerConnectionException exception = await Assert.ThrowsAsync<ServerConnectionException>(
+            () => client.GetBootstrapAsync(BootstrapUri, CancellationToken.None));
+
+        Assert.Contains("слишком долго", exception.UserMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("VPN", exception.UserMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.IsAssignableFrom<OperationCanceledException>(exception.InnerException);
+    }
+
+    [Fact]
+    public async Task GetBootstrapAsync_PreservesCallerCancellationAsCancellation()
+    {
+        using HttpClient httpClient = new(new AsyncHttpMessageHandler(async (_, cancellationToken) =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("The delay should have been cancelled.");
+        }))
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        LauncherServerClient client = new(
+            httpClient,
+            new NullAppLogger(),
+            TimeSpan.FromSeconds(5));
+        using CancellationTokenSource cancellation = new(TimeSpan.FromMilliseconds(30));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => client.GetBootstrapAsync(BootstrapUri, cancellation.Token));
+    }
+
+    [Fact]
     public async Task GetBootstrapAsync_ParsesOrdinaryResponseBelow256KiB()
     {
         LauncherServerClient client = CreateClient(Json("""
@@ -485,6 +561,15 @@ public sealed class LauncherServerClientTests
             RequestUris.Add(requestUri);
             return Task.FromResult(_responder(requestUri, RequestUris.Count));
         }
+    }
+
+    private sealed class AsyncHttpMessageHandler(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responder)
+        : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) => responder(request, cancellationToken);
     }
 
     private sealed class UnknownLengthContent : HttpContent
