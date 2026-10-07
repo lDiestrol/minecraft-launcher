@@ -18,7 +18,7 @@ public sealed class LauncherUpdateTests
             .InformationalVersion;
 
         Assert.Equal(expected, LauncherVersion.Current);
-        Assert.Equal("0.5.0-rc.1", LauncherVersion.Current);
+        Assert.Equal("0.5.0", LauncherVersion.Current);
     }
 
     [Fact]

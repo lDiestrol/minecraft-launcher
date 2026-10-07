@@ -2,7 +2,7 @@
 
 Открытый Windows-лаунчер для Minecraft-серверов с конфигурацией по URL. Пользователь указывает адрес сервера, лаунчер получает `bootstrap.json` и список игровых сборок, после чего сохраняет ник, выбранный профиль и объём RAM.
 
-Проект находится на этапе **первого публичного Release Candidate (0.5.0-rc.1)**. Перед запуском Minecraft Launcher получает Pack Manifest v1, проверяет SHA-256 и синхронизирует Launcher-managed `mods`/`config`. Затем CmlLib.Core подготавливает Minecraft, managed Java и точную версию Fabric и запускает клиент с локальным offline nickname.
+Проект находится на этапе **первой публичной stable-версии (0.5.0)**. Перед запуском Minecraft Launcher получает Pack Manifest v1, проверяет SHA-256 и синхронизирует Launcher-managed `mods`/`config`. Затем CmlLib.Core подготавливает Minecraft, managed Java и точную версию Fabric и запускает клиент с локальным offline nickname.
 
 ## Требования
 
