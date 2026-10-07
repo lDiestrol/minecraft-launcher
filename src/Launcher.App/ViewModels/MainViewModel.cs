@@ -12,11 +12,15 @@ public sealed class MainViewModel : ObservableObject
     private readonly ILauncherServerClient _serverClient;
     private readonly ISettingsStore _settingsStore;
     private readonly ISystemMemoryProvider _memoryProvider;
+    private readonly LauncherOperationCoordinator _operationCoordinator;
+    private readonly LauncherUpdateCoordinator _updateCoordinator;
     private readonly IAppLogger _logger;
     private readonly SemaphoreSlim _saveLock = new(1, 1);
     private LauncherSettings _settings = new();
     private BootstrapConfiguration? _bootstrap;
     private LauncherScreen _screen = LauncherScreen.Onboarding;
+    private LauncherScreen _settingsReturnScreen = LauncherScreen.Onboarding;
+    private string _serverUrlBeforeSettings = string.Empty;
     private string _serverUrl = string.Empty;
     private string _serverName = string.Empty;
     private string _nickname = string.Empty;
@@ -28,35 +32,133 @@ public sealed class MainViewModel : ObservableObject
     private string? _errorText;
     private bool _isBusy;
     private bool _isChangingServer;
+    private bool _hasConnectionFailure;
+    private bool _isGamePreparing;
+    private bool _isGameRunning;
+    private bool _isProgressIndeterminate = true;
+    private double _progressValue;
+    private string _progressDetails = string.Empty;
+    private string _playButtonText = "ИГРАТЬ";
+    private CancellationTokenSource? _gameLaunchCancellation;
+    private LauncherUpdateInfo? _availableUpdate;
+    private string _updateStatusText = string.Empty;
+    private double _updateProgressValue;
+    private bool _isUpdateProgressVisible;
+    private bool _isUpdateDownloaded;
+    private bool _isUpdateOfferDismissed;
 
     public MainViewModel(
         ILauncherServerClient serverClient,
         ISettingsStore settingsStore,
         ISystemMemoryProvider memoryProvider,
+        LauncherOperationCoordinator operationCoordinator,
+        LauncherUpdateCoordinator updateCoordinator,
         IAppLogger logger)
     {
         _serverClient = serverClient;
         _settingsStore = settingsStore;
         _memoryProvider = memoryProvider;
+        _operationCoordinator = operationCoordinator;
+        _updateCoordinator = updateCoordinator;
         _logger = logger;
 
-        ConnectCommand = new AsyncRelayCommand(ConnectAsync, () => !IsBusy);
-        PlayCommand = new RelayCommand(Play, () => !IsBusy);
+        ConnectCommand = new AsyncRelayCommand(ConnectAsync, CanConnect);
+        PlayCommand = new AsyncRelayCommand(PlayAsync, () => !IsBusy);
+        RepairCommand = new AsyncRelayCommand(
+            RepairAsync,
+            () => !IsBusy && _bootstrap is not null && SelectedProfile is not null);
+        CancelGameCommand = new RelayCommand(CancelGame, () => IsGamePreparing);
         OpenSettingsCommand = new RelayCommand(OpenSettings, () => !IsBusy);
         CancelSettingsCommand = new RelayCommand(CancelSettings, () => !IsBusy);
+        ChangeServerCommand = new RelayCommand(BeginServerChange, () => !IsBusy);
+        CheckForUpdatesCommand = new AsyncRelayCommand(
+            CheckForUpdatesManuallyAsync,
+            () => !IsBusy && _updateCoordinator.IsInstalled);
+        DownloadUpdateCommand = new AsyncRelayCommand(
+            DownloadUpdateAsync,
+            () => !IsBusy && _availableUpdate is not null && !IsUpdateDownloaded);
+        ApplyUpdateCommand = new RelayCommand(
+            ApplyUpdateAndRestart,
+            () => !IsBusy && _availableUpdate is not null && IsUpdateDownloaded);
+        DismissUpdateOfferCommand = new RelayCommand(DismissUpdateOffer, () => !IsBusy);
+
+        UpdateStatusText = _updateCoordinator.IsPortable
+            ? "Portable-режим: проверка обновлений выполняется вручную."
+            : _updateCoordinator.IsInstalled
+                ? "Проверка обновлений выполняется вручную."
+                : "Обновления доступны в установленной версии Launcher.";
     }
 
-    public string Version => "0.1.0-dev";
+    public string Version => $"v{_updateCoordinator.CurrentVersion}";
 
     public ObservableCollection<GameProfile> Profiles { get; } = [];
 
     public AsyncRelayCommand ConnectCommand { get; }
 
-    public RelayCommand PlayCommand { get; }
+    public AsyncRelayCommand PlayCommand { get; }
+
+    public AsyncRelayCommand RepairCommand { get; }
+
+    public RelayCommand CancelGameCommand { get; }
 
     public RelayCommand OpenSettingsCommand { get; }
 
     public RelayCommand CancelSettingsCommand { get; }
+
+    public RelayCommand ChangeServerCommand { get; }
+
+    public AsyncRelayCommand CheckForUpdatesCommand { get; }
+
+    public AsyncRelayCommand DownloadUpdateCommand { get; }
+
+    public RelayCommand ApplyUpdateCommand { get; }
+
+    public RelayCommand DismissUpdateOfferCommand { get; }
+
+    public string UpdateStatusText
+    {
+        get => _updateStatusText;
+        private set => SetProperty(ref _updateStatusText, value);
+    }
+
+    public double UpdateProgressValue
+    {
+        get => _updateProgressValue;
+        private set => SetProperty(ref _updateProgressValue, value);
+    }
+
+    public bool IsUpdateProgressVisible
+    {
+        get => _isUpdateProgressVisible;
+        private set => SetProperty(ref _isUpdateProgressVisible, value);
+    }
+
+    public bool HasAvailableUpdate => _availableUpdate is not null;
+
+    public bool IsUpdateOfferVisible => HasAvailableUpdate && !_isUpdateOfferDismissed;
+
+    public bool IsUpdateOfferDownloadVisible => IsUpdateOfferVisible && !IsUpdateDownloaded;
+
+    public bool IsUpdateOfferApplyVisible => IsUpdateOfferVisible && IsUpdateDownloaded;
+
+    public string UpdateOfferText => _availableUpdate is null
+        ? string.Empty
+        : $"Доступна новая версия {_availableUpdate.Version}";
+
+    public bool IsUpdateDownloaded
+    {
+        get => _isUpdateDownloaded;
+        private set
+        {
+            if (SetProperty(ref _isUpdateDownloaded, value))
+            {
+                DownloadUpdateCommand.RaiseCanExecuteChanged();
+                ApplyUpdateCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(IsUpdateOfferDownloadVisible));
+                OnPropertyChanged(nameof(IsUpdateOfferApplyVisible));
+            }
+        }
+    }
 
     public LauncherScreen Screen
     {
@@ -67,8 +169,24 @@ public sealed class MainViewModel : ObservableObject
     public string ServerUrl
     {
         get => _serverUrl;
-        set => SetProperty(ref _serverUrl, value);
+        set
+        {
+            if (SetProperty(ref _serverUrl, value))
+            {
+                OnPropertyChanged(nameof(ServerUrlValidationText));
+                OnPropertyChanged(nameof(HasServerUrlValidationError));
+                ConnectCommand.RaiseCanExecuteChanged();
+            }
+        }
     }
+
+    public string? ServerUrlValidationText =>
+        string.IsNullOrWhiteSpace(ServerUrl) ||
+        ServerUrlNormalizer.TryNormalize(ServerUrl, out _, out string? validationError)
+            ? null
+            : validationError;
+
+    public bool HasServerUrlValidationError => ServerUrlValidationText is not null;
 
     public string ServerName
     {
@@ -95,6 +213,7 @@ public sealed class MainViewModel : ObservableObject
         {
             if (SetProperty(ref _selectedProfile, value))
             {
+                RepairCommand.RaiseCanExecuteChanged();
                 ScheduleSettingsSave();
             }
         }
@@ -151,8 +270,14 @@ public sealed class MainViewModel : ObservableObject
             {
                 ConnectCommand.RaiseCanExecuteChanged();
                 PlayCommand.RaiseCanExecuteChanged();
+                RepairCommand.RaiseCanExecuteChanged();
                 OpenSettingsCommand.RaiseCanExecuteChanged();
                 CancelSettingsCommand.RaiseCanExecuteChanged();
+                ChangeServerCommand.RaiseCanExecuteChanged();
+                CheckForUpdatesCommand.RaiseCanExecuteChanged();
+                DownloadUpdateCommand.RaiseCanExecuteChanged();
+                ApplyUpdateCommand.RaiseCanExecuteChanged();
+                DismissUpdateOfferCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -168,6 +293,70 @@ public sealed class MainViewModel : ObservableObject
                 OnPropertyChanged(nameof(OnboardingDescription));
             }
         }
+    }
+
+    public bool HasConnectionFailure
+    {
+        get => _hasConnectionFailure;
+        private set
+        {
+            if (SetProperty(ref _hasConnectionFailure, value))
+            {
+                OnPropertyChanged(nameof(ConnectButtonText));
+            }
+        }
+    }
+
+    public string ConnectButtonText => HasConnectionFailure ? "ПОВТОРИТЬ" : "ПОДКЛЮЧИТЬСЯ";
+
+    public bool IsGamePreparing
+    {
+        get => _isGamePreparing;
+        private set
+        {
+            if (SetProperty(ref _isGamePreparing, value))
+            {
+                CancelGameCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool IsGameRunning
+    {
+        get => _isGameRunning;
+        private set => SetProperty(ref _isGameRunning, value);
+    }
+
+    public bool IsProgressIndeterminate
+    {
+        get => _isProgressIndeterminate;
+        private set => SetProperty(ref _isProgressIndeterminate, value);
+    }
+
+    public double ProgressValue
+    {
+        get => _progressValue;
+        private set => SetProperty(ref _progressValue, value);
+    }
+
+    public string ProgressDetails
+    {
+        get => _progressDetails;
+        private set
+        {
+            if (SetProperty(ref _progressDetails, value))
+            {
+                OnPropertyChanged(nameof(HasProgressDetails));
+            }
+        }
+    }
+
+    public bool HasProgressDetails => !string.IsNullOrWhiteSpace(ProgressDetails);
+
+    public string PlayButtonText
+    {
+        get => _playButtonText;
+        private set => SetProperty(ref _playButtonText, value);
     }
 
     public string OnboardingTitle => IsChangingServer ? "Настройки сервера" : "Добро пожаловать";
@@ -206,7 +395,47 @@ public sealed class MainViewModel : ObservableObject
         }
 
         ServerUrl = _settings.ServerUrl;
-        await ConnectAsync();
+        Screen = LauncherScreen.Onboarding;
+        StatusText = "Ожидание";
+    }
+
+    public Task AutoConnectAsync() => string.IsNullOrWhiteSpace(_settings.ServerUrl)
+        ? Task.CompletedTask
+        : ConnectAsync();
+
+    public async Task CheckForUpdatesOnStartupAsync()
+    {
+        if (!_updateCoordinator.IsInstalled)
+        {
+            _logger.Info("Automatic update check skipped: Launcher is not installed.");
+            return;
+        }
+
+        _logger.Info("Automatic update check started.");
+        try
+        {
+            LauncherUpdateInfo? update = await _updateCoordinator.CheckForUpdatesAsync(
+                CancellationToken.None);
+            if (update is null)
+            {
+                _logger.Info("Automatic update check completed: no update.");
+                return;
+            }
+
+            SetAvailableUpdate(update);
+            UpdateStatusText = $"Доступна версия {update.Version}.";
+            _logger.Info(
+                $"Automatic update available: current={_updateCoordinator.CurrentVersion}, " +
+                $"available={update.Version}.");
+        }
+        catch (LauncherUpdateException exception)
+        {
+            _logger.Info($"Automatic update check failed: {exception.UserMessage}");
+        }
+        catch (Exception exception)
+        {
+            _logger.Error("Automatic update check failed unexpectedly.", exception);
+        }
     }
 
     private async Task ConnectAsync()
@@ -219,17 +448,19 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
+        LauncherScreen connectionScreen = Screen;
+        HasConnectionFailure = false;
         IsBusy = true;
         _logger.Info($"Connecting to launcher server: {bootstrapUri}");
 
         try
         {
-            StatusText = "Получение конфигурации";
+            StatusText = "Подключение...";
             BootstrapConfiguration bootstrap = await _serverClient.GetBootstrapAsync(
                 bootstrapUri!,
                 CancellationToken.None);
 
-            StatusText = "Получение профилей";
+            StatusText = "Подключение...";
             IReadOnlyList<GameProfile> profiles = await _serverClient.GetProfilesAsync(
                 bootstrap,
                 CancellationToken.None);
@@ -266,14 +497,20 @@ public sealed class MainViewModel : ObservableObject
             _logger.Error(exception.Message, exception);
             ErrorText = exception.UserMessage;
             StatusText = "Ошибка";
-            Screen = LauncherScreen.Onboarding;
+            HasConnectionFailure = connectionScreen == LauncherScreen.Onboarding;
+            Screen = connectionScreen == LauncherScreen.Settings
+                ? LauncherScreen.Settings
+                : LauncherScreen.Onboarding;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             _logger.Error("Could not persist launcher settings.", exception);
             ErrorText = "Подключение выполнено, но настройки не удалось сохранить.";
             StatusText = "Ошибка";
-            Screen = LauncherScreen.Onboarding;
+            HasConnectionFailure = connectionScreen == LauncherScreen.Onboarding;
+            Screen = connectionScreen == LauncherScreen.Settings
+                ? LauncherScreen.Settings
+                : LauncherScreen.Onboarding;
         }
         finally
         {
@@ -283,28 +520,160 @@ public sealed class MainViewModel : ObservableObject
 
     private void OpenSettings()
     {
+        _settingsReturnScreen = Screen;
+        _serverUrlBeforeSettings = ServerUrl;
         IsChangingServer = true;
         ErrorText = null;
-        ServerUrl = _bootstrap?.BootstrapUri.AbsoluteUri ?? _settings.ServerUrl ?? string.Empty;
-        Screen = LauncherScreen.Onboarding;
-        StatusText = "Ожидание";
+        ServerUrl = _bootstrap?.BootstrapUri.AbsoluteUri
+            ?? (string.IsNullOrWhiteSpace(ServerUrl) ? _settings.ServerUrl ?? string.Empty : ServerUrl);
+        Screen = LauncherScreen.Settings;
     }
 
     private void CancelSettings()
     {
+        IsChangingServer = false;
+        ErrorText = null;
+
         if (_bootstrap is null)
         {
+            ServerUrl = _serverUrlBeforeSettings;
+            Screen = _settingsReturnScreen;
             return;
         }
 
-        IsChangingServer = false;
-        ErrorText = null;
         ServerUrl = _bootstrap.BootstrapUri.AbsoluteUri;
         Screen = LauncherScreen.Main;
         StatusText = "Готово";
     }
 
-    private void Play()
+    private void BeginServerChange()
+    {
+        HasConnectionFailure = false;
+        ErrorText = null;
+        ServerUrl = string.Empty;
+        StatusText = "Ожидание";
+    }
+
+    public async Task CheckForUpdatesManuallyAsync()
+    {
+        IsBusy = true;
+        UpdateStatusText = "Проверка обновлений...";
+        IsUpdateProgressVisible = false;
+        IsUpdateDownloaded = false;
+        SetAvailableUpdate(null);
+
+        try
+        {
+            LauncherUpdateInfo? update = await _updateCoordinator.CheckForUpdatesAsync(CancellationToken.None);
+            SetAvailableUpdate(update);
+            UpdateStatusText = update is null
+                ? "Установлена актуальная версия."
+                : $"Доступна версия {update.Version}.";
+        }
+        catch (LauncherUpdateException exception)
+        {
+            _logger.Error(exception.Message, exception);
+            UpdateStatusText = exception.UserMessage;
+        }
+        catch (Exception exception)
+        {
+            _logger.Error("Unexpected Launcher update check failure.", exception);
+            UpdateStatusText = "Ошибка проверки обновления. Launcher продолжит работать.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task DownloadUpdateAsync()
+    {
+        if (_availableUpdate is null)
+        {
+            UpdateStatusText = "Сначала проверьте наличие обновления.";
+            return;
+        }
+
+        IsBusy = true;
+        IsUpdateProgressVisible = true;
+        UpdateProgressValue = 0;
+        UpdateStatusText = "Загрузка обновления...";
+        Progress<int> progress = new(value => UpdateProgressValue = value);
+
+        try
+        {
+            await _updateCoordinator.DownloadUpdateAsync(
+                _availableUpdate,
+                progress,
+                CancellationToken.None);
+            UpdateProgressValue = 100;
+            IsUpdateDownloaded = true;
+            UpdateStatusText = "Обновление загружено. Перезапустите Launcher для установки.";
+        }
+        catch (LauncherUpdateException exception)
+        {
+            _logger.Error(exception.Message, exception);
+            IsUpdateProgressVisible = false;
+            UpdateStatusText = exception.UserMessage;
+        }
+        catch (Exception exception)
+        {
+            _logger.Error("Unexpected Launcher update download failure.", exception);
+            IsUpdateProgressVisible = false;
+            UpdateStatusText = "Не удалось скачать обновление.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void ApplyUpdateAndRestart()
+    {
+        if (_availableUpdate is null || !IsUpdateDownloaded)
+        {
+            UpdateStatusText = "Сначала скачайте обновление.";
+            return;
+        }
+
+        try
+        {
+            UpdateStatusText = "Перезапуск для установки обновления...";
+            _updateCoordinator.ApplyUpdateAndRestart(_availableUpdate);
+        }
+        catch (LauncherUpdateException exception)
+        {
+            _logger.Error(exception.Message, exception);
+            UpdateStatusText = exception.UserMessage;
+        }
+        catch (Exception exception)
+        {
+            _logger.Error("Unexpected Launcher update apply failure.", exception);
+            UpdateStatusText = "Не удалось применить обновление и перезапустить Launcher.";
+        }
+    }
+
+    private void SetAvailableUpdate(LauncherUpdateInfo? update)
+    {
+        _availableUpdate = update;
+        OnPropertyChanged(nameof(HasAvailableUpdate));
+        OnPropertyChanged(nameof(IsUpdateOfferVisible));
+        OnPropertyChanged(nameof(IsUpdateOfferDownloadVisible));
+        OnPropertyChanged(nameof(IsUpdateOfferApplyVisible));
+        OnPropertyChanged(nameof(UpdateOfferText));
+        DownloadUpdateCommand.RaiseCanExecuteChanged();
+        ApplyUpdateCommand.RaiseCanExecuteChanged();
+    }
+
+    private void DismissUpdateOffer()
+    {
+        _isUpdateOfferDismissed = true;
+        OnPropertyChanged(nameof(IsUpdateOfferVisible));
+        OnPropertyChanged(nameof(IsUpdateOfferDownloadVisible));
+        OnPropertyChanged(nameof(IsUpdateOfferApplyVisible));
+    }
+
+    private async Task PlayAsync()
     {
         ErrorText = null;
         if (_bootstrap is null)
@@ -325,10 +694,257 @@ public sealed class MainViewModel : ObservableObject
         }
         else
         {
-            StatusText = "Запуск Minecraft будет реализован на следующем этапе.";
+            GameProfile selectedProfile = SelectedProfile;
+            GameLaunchRequest request;
+            try
+            {
+                request = GameLaunchRequestFactory.Create(selectedProfile, Nickname, RamMb);
+            }
+            catch (GameLaunchException exception)
+            {
+                ErrorText = exception.UserMessage;
+                StatusText = "Ошибка";
+                return;
+            }
+
             ScheduleSettingsSave();
+            IsBusy = true;
+            IsGamePreparing = true;
+            IsGameRunning = false;
+            IsProgressIndeterminate = true;
+            ProgressValue = 0;
+            ProgressDetails = string.Empty;
+            PlayButtonText = "ПОДГОТОВКА...";
+            _gameLaunchCancellation = new CancellationTokenSource();
+            Progress<PackSyncProgress> packProgress = new(UpdatePackProgress);
+            Progress<GameLaunchProgress> gameProgress = new(UpdateGameProgress);
+
+            try
+            {
+                (PackSyncResult _, GameLaunchResult result) = await Task.Run(() =>
+                    _operationCoordinator.PlayAsync(
+                        selectedProfile,
+                        request,
+                        packProgress,
+                        gameProgress,
+                        _gameLaunchCancellation.Token));
+
+                if (result.ExitCode == 0)
+                {
+                    StatusText = "Minecraft завершён";
+                }
+                else
+                {
+                    StatusText = "Minecraft завершился с ошибкой";
+                    ErrorText = $"Код завершения: {result.ExitCode}. Подробности записаны в лог.";
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                StatusText = "Операция отменена";
+                ProgressDetails = string.Empty;
+            }
+            catch (PackSyncException exception)
+            {
+                _logger.Error(exception.Message, exception);
+                StatusText = "Ошибка";
+                ErrorText = exception.UserMessage;
+            }
+            catch (GameLaunchException exception)
+            {
+                _logger.Error(exception.Message, exception);
+                StatusText = "Ошибка";
+                ErrorText = exception.UserMessage;
+            }
+            catch (Exception exception)
+            {
+                _logger.Error("Unexpected game launch failure.", exception);
+                StatusText = "Ошибка";
+                ErrorText = "Не удалось подготовить или запустить Minecraft. Подробности записаны в лог.";
+            }
+            finally
+            {
+                _gameLaunchCancellation.Dispose();
+                _gameLaunchCancellation = null;
+                IsGamePreparing = false;
+                IsGameRunning = false;
+                IsProgressIndeterminate = true;
+                PlayButtonText = "ИГРАТЬ";
+                IsBusy = false;
+            }
         }
     }
+
+    private async Task RepairAsync()
+    {
+        ErrorText = null;
+        if (_bootstrap is null || SelectedProfile is null)
+        {
+            ErrorText = "Сначала подключитесь к серверу и выберите игровую сборку.";
+            return;
+        }
+
+        GameProfile selectedProfile = SelectedProfile;
+        IsBusy = true;
+        IsGamePreparing = true;
+        IsGameRunning = false;
+        IsProgressIndeterminate = true;
+        ProgressValue = 0;
+        ProgressDetails = string.Empty;
+        _gameLaunchCancellation = new CancellationTokenSource();
+        Progress<PackSyncProgress> progress = new(UpdatePackProgress);
+
+        try
+        {
+            PackSyncResult result = await Task.Run(() =>
+                _operationCoordinator.RepairAsync(
+                    selectedProfile,
+                    progress,
+                    _gameLaunchCancellation.Token));
+            if (result.DownloadedFiles == 0 && result.DeletedFiles == 0)
+            {
+                StatusText = "Файлы сборки уже исправны.";
+            }
+            else
+            {
+                StatusText = $"Восстановлено файлов: {result.DownloadedFiles}; удалено устаревших: {result.DeletedFiles}.";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText = "Проверка файлов отменена";
+            ProgressDetails = string.Empty;
+        }
+        catch (PackSyncException exception)
+        {
+            _logger.Error(exception.Message, exception);
+            StatusText = "Ошибка";
+            ErrorText = exception.UserMessage;
+        }
+        catch (Exception exception)
+        {
+            _logger.Error("Unexpected pack repair failure.", exception);
+            StatusText = "Ошибка";
+            ErrorText = "Не удалось проверить файлы сборки. Подробности записаны в лог.";
+        }
+        finally
+        {
+            _gameLaunchCancellation.Dispose();
+            _gameLaunchCancellation = null;
+            IsGamePreparing = false;
+            IsProgressIndeterminate = true;
+            IsBusy = false;
+        }
+    }
+
+    private void CancelGame()
+    {
+        if (!IsGamePreparing || _gameLaunchCancellation is null)
+        {
+            return;
+        }
+
+        StatusText = "Отмена операции...";
+        CancelGameCommand.RaiseCanExecuteChanged();
+        _gameLaunchCancellation.Cancel();
+    }
+
+    private void UpdateGameProgress(GameLaunchProgress progress)
+    {
+        StatusText = GetFriendlyStatus(progress.Stage);
+        if (progress.Percentage is double percentage)
+        {
+            IsProgressIndeterminate = false;
+            ProgressValue = percentage;
+        }
+        else
+        {
+            IsProgressIndeterminate = progress.Stage is not GameLaunchStage.MinecraftStarted;
+        }
+
+        ProgressDetails = FormatProgressDetails(progress);
+
+        if (progress.Stage == GameLaunchStage.MinecraftStarted)
+        {
+            IsGamePreparing = false;
+            IsGameRunning = true;
+            PlayButtonText = "MINECRAFT ЗАПУЩЕН";
+            ProgressValue = 100;
+        }
+        else if (progress.Stage == GameLaunchStage.MinecraftExited)
+        {
+            IsGameRunning = false;
+        }
+    }
+
+    private void UpdatePackProgress(PackSyncProgress progress)
+    {
+        StatusText = GetFriendlyStatus(progress.Stage);
+        if (progress.Percentage is double percentage)
+        {
+            IsProgressIndeterminate = false;
+            ProgressValue = percentage;
+        }
+        else
+        {
+            IsProgressIndeterminate = true;
+        }
+
+        ProgressDetails = FormatProgressDetails(progress);
+    }
+
+    private static string FormatProgressDetails(GameLaunchProgress progress)
+    {
+        if (progress.TotalBytes > 0 && progress.CompletedBytes is long completedBytes)
+        {
+            return $"{FormatBytes(completedBytes)} / {FormatBytes(progress.TotalBytes.Value)}";
+        }
+
+        if (progress.TotalFiles > 0 && progress.CompletedFiles is int completedFiles)
+        {
+            return $"{completedFiles} / {progress.TotalFiles.Value} файлов";
+        }
+
+        return string.Empty;
+    }
+
+    private static string FormatProgressDetails(PackSyncProgress progress)
+    {
+        if (progress.TotalBytes > 0 && progress.CompletedBytes is long completedBytes)
+        {
+            string files = progress.TotalFiles > 0 && progress.CompletedFiles is int completedFiles
+                ? $"{completedFiles} / {progress.TotalFiles.Value} файлов; "
+                : string.Empty;
+            return $"{files}{FormatBytes(completedBytes)} / {FormatBytes(progress.TotalBytes.Value)}";
+        }
+
+        return progress.TotalFiles > 0 && progress.CompletedFiles is int completed
+            ? $"{completed} / {progress.TotalFiles.Value} файлов"
+            : string.Empty;
+    }
+
+    private static string GetFriendlyStatus(GameLaunchStage stage) => stage switch
+    {
+        GameLaunchStage.DownloadingMinecraft => "Загрузка Minecraft...",
+        GameLaunchStage.StartingMinecraft => "Запуск Minecraft...",
+        GameLaunchStage.MinecraftStarted => "Minecraft запущен",
+        GameLaunchStage.MinecraftExited => "Minecraft завершён",
+        GameLaunchStage.Error => "Ошибка",
+        _ => "Подготовка Minecraft...",
+    };
+
+    private static string GetFriendlyStatus(PackSyncStage stage) => stage switch
+    {
+        PackSyncStage.FetchingManifest or PackSyncStage.DownloadingFiles => "Загрузка сборки...",
+        PackSyncStage.ApplyingUpdate or PackSyncStage.RemovingObsoleteFiles => "Обновление файлов...",
+        PackSyncStage.Complete => "Готово",
+        _ => "Проверка файлов...",
+    };
+
+    private static string FormatBytes(long bytes) => $"{bytes / 1024d / 1024d:0.#} MB";
+
+    private bool CanConnect() =>
+        !IsBusy && ServerUrlNormalizer.TryNormalize(ServerUrl, out _, out _);
 
     private void ScheduleSettingsSave()
     {

@@ -5,69 +5,183 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:controls="clr-namespace:Launcher.App.Controls"
         xmlns:vm="clr-namespace:Launcher.App.ViewModels"
+        xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
         mc:Ignorable="d"
         Title="Minecraft Launcher"
-        Width="600"
-        Height="650"
-        MinWidth="520"
-        MinHeight="580"
+        Icon="Assets/Launcher.ico"
+        Width="680"
+        Height="760"
+        MinWidth="560"
+        MinHeight="620"
         WindowStartupLocation="CenterScreen"
-        Background="#14171C"
-        Foreground="#F4F6F8"
+        Background="#101318"
+        Foreground="#F4F7F5"
         FontFamily="Segoe UI"
         FontSize="14">
     <Window.Resources>
-        <SolidColorBrush x:Key="PanelBrush" Color="#1D2229" />
-        <SolidColorBrush x:Key="BorderBrush" Color="#343B45" />
-        <SolidColorBrush x:Key="MutedBrush" Color="#9AA5B1" />
-        <SolidColorBrush x:Key="AccentBrush" Color="#64D27A" />
-        <SolidColorBrush x:Key="AccentHoverBrush" Color="#78E58D" />
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#191E25" />
+        <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="#20262F" />
+        <SolidColorBrush x:Key="BorderBrush" Color="#36404B" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#A8B2BC" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#67D27D" />
+        <SolidColorBrush x:Key="AccentHoverBrush" Color="#79E38D" />
+        <SolidColorBrush x:Key="FocusBrush" Color="#C9F7D2" />
+        <SolidColorBrush x:Key="ErrorBrush" Color="#FF8A8A" />
 
         <Style TargetType="TextBox">
-            <Setter Property="Background" Value="#12151A" />
-            <Setter Property="Foreground" Value="#F4F6F8" />
-            <Setter Property="CaretBrush" Value="#F4F6F8" />
+            <Setter Property="Background" Value="#11161C" />
+            <Setter Property="Foreground" Value="#F4F7F5" />
+            <Setter Property="CaretBrush" Value="#F4F7F5" />
+            <Setter Property="SelectionBrush" Value="#477E54" />
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="12,10" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="TextBoxBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          HorizontalScrollBarVisibility="Hidden"
+                                          VerticalScrollBarVisibility="Hidden" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="TextBoxBorder" Property="BorderBrush" Value="{StaticResource FocusBrush}" />
+                                <Setter TargetName="TextBoxBorder" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="TextBoxBorder" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="#12151A" />
-            <Setter Property="Foreground" Value="#F4F6F8" />
+            <Setter Property="Background" Value="#11161C" />
+            <Setter Property="Foreground" Value="#F4F7F5" />
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="10,8" />
+            <Setter Property="MaxDropDownHeight" Value="260" />
             <Setter Property="ItemContainerStyle">
                 <Setter.Value>
                     <Style TargetType="ComboBoxItem">
-                        <Setter Property="Background" Value="#1D2229" />
-                        <Setter Property="Foreground" Value="#F4F6F8" />
+                        <Setter Property="Background" Value="{StaticResource SurfaceRaisedBrush}" />
+                        <Setter Property="Foreground" Value="#F4F7F5" />
                         <Setter Property="Padding" Value="10,7" />
                         <Style.Triggers>
                             <Trigger Property="IsHighlighted" Value="True">
-                                <Setter Property="Background" Value="#353D48" />
+                                <Setter Property="Background" Value="#36414C" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="#31523A" />
+                                <Setter Property="Background" Value="#31583B" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.45" />
+                                <Setter Property="Opacity" Value="0.5" />
                             </Trigger>
                         </Style.Triggers>
                     </Style>
                 </Setter.Value>
             </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="DropDownToggle"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          Focusable="False"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="ComboBorder"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="6">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition />
+                                                    <ColumnDefinition Width="34" />
+                                                </Grid.ColumnDefinitions>
+                                                <ContentPresenter Margin="{Binding Padding, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                                  VerticalAlignment="Center"
+                                                                  Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                                  ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                                  ContentStringFormat="{Binding SelectionBoxItemStringFormat, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                                  TextElement.Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBox}}" />
+                                                <Path Grid.Column="1"
+                                                      Width="9"
+                                                      Height="5"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      Data="M 0 0 L 4.5 5 L 9 0 Z"
+                                                      Fill="{StaticResource MutedBrush}" />
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="ComboBorder" Property="Background" Value="#182029" />
+                                            </Trigger>
+                                            <Trigger Property="IsPressed" Value="True">
+                                                <Setter TargetName="ComboBorder" Property="Background" Value="#202933" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   Placement="Bottom"
+                                   PopupAnimation="Fade">
+                                <Border MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                        Margin="0,4,0,0"
+                                        Padding="4"
+                                        Background="{StaticResource SurfaceRaisedBrush}"
+                                        BorderBrush="{StaticResource BorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="6">
+                                    <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="DropDownToggle" Property="BorderBrush" Value="{StaticResource FocusBrush}" />
+                                <Setter TargetName="DropDownToggle" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style TargetType="Button">
-            <Setter Property="Foreground" Value="#F4F6F8" />
-            <Setter Property="Background" Value="#2A3039" />
-            <Setter Property="BorderBrush" Value="#414A56" />
+            <Setter Property="Foreground" Value="#F4F7F5" />
+            <Setter Property="Background" Value="#29313B" />
+            <Setter Property="BorderBrush" Value="#46515E" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="18,10" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="controls:ButtonAssist.HoverBackground" Value="#353D48" />
+            <Setter Property="controls:ButtonAssist.HoverBackground" Value="#37424E" />
+            <Setter Property="controls:ButtonAssist.PressedBackground" Value="#20262E" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -76,7 +190,7 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="5">
+                                CornerRadius="6">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -85,8 +199,18 @@
                                         Property="Background"
                                         Value="{Binding Path=(controls:ButtonAssist.HoverBackground), RelativeSource={RelativeSource TemplatedParent}}" />
                             </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder"
+                                        Property="Background"
+                                        Value="{Binding Path=(controls:ButtonAssist.PressedBackground), RelativeSource={RelativeSource TemplatedParent}}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{StaticResource FocusBrush}" />
+                                <Setter TargetName="ButtonBorder" Property="BorderThickness" Value="2" />
+                            </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.45" />
+                                <Setter Property="Cursor" Value="Arrow" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -97,205 +221,356 @@
         <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="{StaticResource AccentBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
-            <Setter Property="Foreground" Value="#101410" />
+            <Setter Property="Foreground" Value="#0B160E" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="FontSize" Value="15" />
-            <Setter Property="Padding" Value="22,13" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Padding" Value="24,14" />
             <Setter Property="controls:ButtonAssist.HoverBackground" Value="{StaticResource AccentHoverBrush}" />
+            <Setter Property="controls:ButtonAssist.PressedBackground" Value="#4EB566" />
+        </Style>
+
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="24" />
         </Style>
 
         <Style x:Key="SectionLabel" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
             <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Margin" Value="0,0,0,7" />
+        </Style>
+
+        <Style TargetType="ProgressBar">
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Background" Value="#2B333D" />
         </Style>
     </Window.Resources>
 
     <Grid>
-    <Grid Margin="34">
-        <Grid.Style>
-            <Style TargetType="Grid">
-                <Setter Property="Visibility" Value="Collapsed" />
-                <Style.Triggers>
-                    <DataTrigger Binding="{Binding Screen}" Value="{x:Static vm:LauncherScreen.Onboarding}">
-                        <Setter Property="Visibility" Value="Visible" />
-                    </DataTrigger>
-                </Style.Triggers>
-            </Style>
-        </Grid.Style>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+        <Grid Margin="32">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Screen}" Value="{x:Static vm:LauncherScreen.Onboarding}">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock FontSize="18" FontWeight="SemiBold" Text="Minecraft Launcher" />
-            <TextBlock Grid.Column="1" Foreground="{StaticResource MutedBrush}" Text="{Binding Version}" />
-        </Grid>
-
-        <Border Grid.Row="1"
-                Margin="0,34,0,24"
-                Padding="28"
-                Background="{StaticResource PanelBrush}"
-                BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="1"
-                CornerRadius="8"
-                VerticalAlignment="Center">
-            <StackPanel>
-                <TextBlock FontSize="27" FontWeight="SemiBold" Text="{Binding OnboardingTitle}" />
-                <TextBlock Margin="0,9,0,25"
-                           Foreground="{StaticResource MutedBrush}"
-                           Text="{Binding OnboardingDescription}"
-                           TextWrapping="Wrap" />
-                <TextBlock Style="{StaticResource SectionLabel}" Text="АДРЕС СЕРВЕРА" />
-                <TextBox Text="{Binding ServerUrl, UpdateSourceTrigger=PropertyChanged}"
-                         ToolTip="https://example.org или прямая ссылка на bootstrap.json" />
-                <TextBlock Margin="0,14,0,0"
-                           Foreground="#FF7B7B"
-                           Text="{Binding ErrorText}"
-                           TextWrapping="Wrap"
-                           Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                <ProgressBar Height="3"
-                             Margin="0,20,0,0"
-                             IsIndeterminate="True"
-                             Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                <Button Margin="0,22,0,0"
-                        Command="{Binding ConnectCommand}"
-                        Content="ПОДКЛЮЧИТЬСЯ"
-                        Style="{StaticResource PrimaryButton}" />
-                <Button Margin="0,10,0,0"
-                        Command="{Binding CancelSettingsCommand}"
-                        Content="Отмена"
-                        Visibility="{Binding IsChangingServer, Converter={StaticResource BooleanToVisibilityConverter}}" />
-            </StackPanel>
-        </Border>
-
-        <TextBlock Grid.Row="2"
-                   Foreground="{StaticResource MutedBrush}"
-                   FontSize="12"
-                   Text="HTTPS обязателен; HTTP разрешён только для localhost." />
-    </Grid>
-
-    <Grid Margin="34">
-        <Grid.Style>
-            <Style TargetType="Grid">
-                <Setter Property="Visibility" Value="Collapsed" />
-                <Style.Triggers>
-                    <DataTrigger Binding="{Binding Screen}" Value="{x:Static vm:LauncherScreen.Main}">
-                        <Setter Property="Visibility" Value="Visible" />
-                    </DataTrigger>
-                </Style.Triggers>
-            </Style>
-        </Grid.Style>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock FontSize="18" FontWeight="SemiBold" Text="Minecraft Launcher" />
-            <TextBlock Grid.Column="1" Foreground="{StaticResource MutedBrush}" Text="{Binding Version}" />
-        </Grid>
-
-        <Border Grid.Row="1"
-                Margin="0,26,0,20"
-                Padding="26"
-                Background="{StaticResource PanelBrush}"
-                BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="1"
-                CornerRadius="8">
             <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal">
+                    <Image Width="30" Height="30" Source="Assets/Launcher.png" />
+                    <TextBlock Margin="11,0,0,0" VerticalAlignment="Center" FontSize="18" FontWeight="SemiBold" Text="Launcher" />
+                </StackPanel>
+                <Button Grid.Column="1" VerticalAlignment="Center" Command="{Binding OpenSettingsCommand}" Content="Настройки" />
+            </Grid>
 
+            <Border Grid.Row="1" MaxWidth="540" Margin="0,28,0,24" VerticalAlignment="Center" Style="{StaticResource Card}">
                 <StackPanel>
-                    <TextBlock Style="{StaticResource SectionLabel}" Text="СЕРВЕР" />
-                    <TextBlock FontSize="21" FontWeight="SemiBold" Text="{Binding ServerName}" TextWrapping="Wrap" />
-                </StackPanel>
-
-                <StackPanel Grid.Row="1" Margin="0,21,0,0">
-                    <TextBlock Style="{StaticResource SectionLabel}" Text="НИК" />
-                    <TextBox MaxLength="16" Text="{Binding Nickname, UpdateSourceTrigger=PropertyChanged}" />
-                </StackPanel>
-
-                <StackPanel Grid.Row="2" Margin="0,18,0,0">
-                    <TextBlock Style="{StaticResource SectionLabel}" Text="СБОРКА" />
-                    <ComboBox ItemsSource="{Binding Profiles}"
-                              SelectedItem="{Binding SelectedProfile}"
-                              DisplayMemberPath="DisplayName" />
-                </StackPanel>
-
-                <Grid Grid.Row="3" Margin="0,18,0,0">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Style="{StaticResource SectionLabel}" Text="RAM" />
-                    <TextBlock Grid.Column="1" FontWeight="SemiBold" Text="{Binding RamDisplay}" />
-                    <Slider Grid.Row="1"
-                            Grid.ColumnSpan="2"
-                            Minimum="2048"
-                            Maximum="{Binding MaximumRamMb}"
-                            Value="{Binding RamMb}"
-                            TickFrequency="1024"
-                            IsSnapToTickEnabled="True" />
-                </Grid>
-
-                <StackPanel Grid.Row="4" Margin="0,18,0,0">
-                    <TextBlock Style="{StaticResource SectionLabel}" Text="СТАТУС" />
-                    <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" />
-                    <TextBlock Margin="0,8,0,0"
-                               Foreground="#FF7B7B"
+                    <Image Width="74" Height="74" HorizontalAlignment="Left" Source="Assets/Launcher.png" />
+                    <TextBlock Margin="0,20,0,0" FontSize="30" FontWeight="SemiBold" Text="Добро пожаловать" />
+                    <TextBlock Margin="0,8,0,28"
+                               Foreground="{StaticResource MutedBrush}"
+                               Text="Введите адрес сервера — остальное Launcher настроит автоматически."
+                               TextWrapping="Wrap" />
+                    <TextBlock Style="{StaticResource SectionLabel}" Text="АДРЕС СЕРВЕРА" />
+                    <TextBox automation:AutomationProperties.Name="Адрес сервера"
+                             Text="{Binding ServerUrl, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Например, https://example.org" />
+                    <TextBlock Margin="0,7,0,0" Foreground="{StaticResource MutedBrush}" FontSize="12" Text="Например: https://example.org" />
+                    <TextBlock Margin="0,10,0,0"
+                               Foreground="{StaticResource ErrorBrush}"
+                               Text="{Binding ServerUrlValidationText}"
+                               TextWrapping="Wrap"
+                               Visibility="{Binding HasServerUrlValidationError, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    <TextBlock Margin="0,12,0,0"
+                               Foreground="{StaticResource ErrorBrush}"
                                Text="{Binding ErrorText}"
                                TextWrapping="Wrap"
                                Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                    <ProgressBar Height="3"
-                                 Margin="0,12,0,0"
-                                 IsIndeterminate="True"
+                    <ProgressBar Height="4" Margin="0,20,0,0" IsIndeterminate="True"
                                  Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    <Button Margin="0,22,0,0"
+                            Command="{Binding ConnectCommand}"
+                            Content="{Binding ConnectButtonText}"
+                            IsDefault="True"
+                            Style="{StaticResource PrimaryButton}" />
+                    <Button Margin="0,10,0,0"
+                            Command="{Binding ChangeServerCommand}"
+                            Content="Изменить сервер"
+                            Visibility="{Binding HasConnectionFailure, Converter={StaticResource BooleanToVisibilityConverter}}" />
                 </StackPanel>
+            </Border>
 
-                <Button Grid.Row="5"
-                        Margin="0,23,0,0"
-                        Command="{Binding PlayCommand}"
-                        Content="ИГРАТЬ"
-                        Style="{StaticResource PrimaryButton}" />
-            </Grid>
-        </Border>
-
-        <Grid Grid.Row="2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <Button HorizontalAlignment="Left"
-                    Command="{Binding OpenSettingsCommand}"
-                    Content="Настройки" />
-            <Button Grid.Column="1"
-                    IsEnabled="False"
-                    Content="Проверить файлы"
-                    ToolTip="Проверка игровых файлов будет реализована на следующем этапе." />
+            <TextBlock Grid.Row="2" HorizontalAlignment="Center" Foreground="{StaticResource MutedBrush}" FontSize="12" Text="{Binding Version}" />
         </Grid>
-    </Grid>
+
+        <Grid Margin="32">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Screen}" Value="{x:Static vm:LauncherScreen.Main}">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Image Width="38" Height="38" Source="Assets/Launcher.png" />
+                <StackPanel Grid.Column="1" Margin="13,0,16,0">
+                    <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12" Text="MINECRAFT LAUNCHER" />
+                    <TextBlock FontSize="21" FontWeight="SemiBold" Text="{Binding ServerName}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <Button Grid.Column="2" VerticalAlignment="Center" Command="{Binding OpenSettingsCommand}" Content="Настройки" />
+            </Grid>
+
+            <StackPanel Grid.Row="1" Margin="0,26,0,20" VerticalAlignment="Center">
+                <Border Margin="0,0,0,14"
+                        Background="#1C3323"
+                        BorderBrush="{StaticResource AccentBrush}"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Padding="18"
+                        Visibility="{Binding IsUpdateOfferVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel>
+                        <TextBlock FontSize="16" FontWeight="SemiBold" Text="{Binding UpdateOfferText}" />
+                        <TextBlock Margin="0,6,0,0"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   Text="{Binding UpdateStatusText}"
+                                   TextWrapping="Wrap" />
+                        <ProgressBar Height="4"
+                                     Margin="0,12,0,0"
+                                     Maximum="100"
+                                     Value="{Binding UpdateProgressValue, Mode=OneWay}"
+                                     Visibility="{Binding IsUpdateProgressVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <WrapPanel Margin="0,14,0,0">
+                            <Button Command="{Binding DownloadUpdateCommand}"
+                                    Content="Обновить"
+                                    Visibility="{Binding IsUpdateOfferDownloadVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <Button Command="{Binding ApplyUpdateCommand}"
+                                    Content="Перезапустить и обновить"
+                                    Visibility="{Binding IsUpdateOfferApplyVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <Button Margin="8,0,0,0"
+                                    Command="{Binding DismissUpdateOfferCommand}"
+                                    Content="Позже" />
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition />
+                                <ColumnDefinition />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SectionLabel}" Text="ПРОФИЛЬ" />
+                                <TextBlock FontWeight="SemiBold" Text="{Binding SelectedProfile.DisplayName}" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Margin="20,0,0,0">
+                                <TextBlock Style="{StaticResource SectionLabel}" Text="ИГРОК" />
+                                <TextBlock FontWeight="SemiBold" Text="{Binding Nickname}" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Margin="20,0,0,0">
+                                <TextBlock Style="{StaticResource SectionLabel}" Text="RAM" />
+                                <TextBlock FontWeight="SemiBold" Text="{Binding RamDisplay}" />
+                            </StackPanel>
+                        </Grid>
+                        <Separator Margin="0,22" Background="{StaticResource BorderBrush}" />
+                        <TextBlock Style="{StaticResource SectionLabel}" Text="СТАТУС" />
+                        <TextBlock FontSize="16" Text="{Binding StatusText}" TextWrapping="Wrap" />
+                        <TextBlock Margin="0,9,0,0"
+                                   Foreground="{StaticResource ErrorBrush}"
+                                   Text="{Binding ErrorText}"
+                                   TextWrapping="Wrap"
+                                   Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <ProgressBar Height="4" Margin="0,14,0,0"
+                                     IsIndeterminate="{Binding IsProgressIndeterminate}"
+                                     Maximum="100"
+                                     Value="{Binding ProgressValue, Mode=OneWay}"
+                                     Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <TextBlock Margin="0,8,0,0"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   FontSize="12"
+                                   Text="{Binding ProgressDetails}"
+                                   Visibility="{Binding HasProgressDetails, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <Button Margin="0,28,0,0"
+                                Command="{Binding PlayCommand}"
+                                Content="{Binding PlayButtonText}"
+                                Style="{StaticResource PrimaryButton}" />
+                        <Button Margin="0,10,0,0"
+                                Command="{Binding CancelGameCommand}"
+                                Content="Отменить подготовку"
+                                Visibility="{Binding IsGamePreparing, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    </StackPanel>
+                </Border>
+                <Button Margin="0,14,0,0"
+                        HorizontalAlignment="Left"
+                        Command="{Binding RepairCommand}"
+                        Content="Проверить файлы"
+                        ToolTip="Проверить файлы сборки и восстановить повреждённые." />
+            </StackPanel>
+
+            <TextBlock Grid.Row="2" HorizontalAlignment="Center" Foreground="{StaticResource MutedBrush}" FontSize="12" Text="{Binding Version}" />
+        </Grid>
+
+        <Grid Margin="32">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Screen}" Value="{x:Static vm:LauncherScreen.Settings}">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal">
+                    <Image Width="34" Height="34" Source="Assets/Launcher.png" />
+                    <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" FontSize="24" FontWeight="SemiBold" Text="Настройки" />
+                </StackPanel>
+                <Button Grid.Column="1" Command="{Binding CancelSettingsCommand}" Content="Готово" />
+            </Grid>
+
+            <ScrollViewer Grid.Row="1" Margin="0,24,0,0" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="0,0,8,0">
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock FontSize="18" FontWeight="SemiBold" Text="Сервер" />
+                            <TextBlock Margin="0,6,0,18"
+                                       Foreground="{StaticResource MutedBrush}"
+                                       Text="Можно указать адрес сайта сервера или прямую ссылку на конфигурацию."
+                                       TextWrapping="Wrap" />
+                            <TextBlock Style="{StaticResource SectionLabel}" Text="АДРЕС СЕРВЕРА" />
+                            <TextBox automation:AutomationProperties.Name="Адрес сервера"
+                                     Text="{Binding ServerUrl, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Margin="0,10,0,0"
+                                       Foreground="{StaticResource ErrorBrush}"
+                                       Text="{Binding ServerUrlValidationText}"
+                                       TextWrapping="Wrap"
+                                       Visibility="{Binding HasServerUrlValidationError, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <TextBlock Margin="0,10,0,0"
+                                       Foreground="{StaticResource ErrorBrush}"
+                                       Text="{Binding ErrorText}"
+                                       TextWrapping="Wrap"
+                                       Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <Button Margin="0,16,0,0" HorizontalAlignment="Left" Command="{Binding ConnectCommand}" Content="Подключиться" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Margin="0,14,0,0" Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock FontSize="18" FontWeight="SemiBold" Text="Игра" />
+                            <TextBlock Margin="0,18,0,0" Style="{StaticResource SectionLabel}" Text="НИК" />
+                            <TextBox MaxLength="16"
+                                     automation:AutomationProperties.Name="Ник игрока"
+                                     Text="{Binding Nickname, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Margin="0,18,0,0" Style="{StaticResource SectionLabel}" Text="ПРОФИЛЬ" />
+                            <ComboBox automation:AutomationProperties.Name="Игровой профиль"
+                                      ItemsSource="{Binding Profiles}"
+                                      SelectedItem="{Binding SelectedProfile}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DisplayName}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <Grid Margin="0,18,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Style="{StaticResource SectionLabel}" Text="ОПЕРАТИВНАЯ ПАМЯТЬ" />
+                                <TextBlock Grid.Column="1" FontWeight="SemiBold" Text="{Binding RamDisplay}" />
+                                <Slider Grid.Row="1" Grid.ColumnSpan="2"
+                                        automation:AutomationProperties.Name="Оперативная память"
+                                        Minimum="2048"
+                                        Maximum="{Binding MaximumRamMb}"
+                                        Value="{Binding RamMb}"
+                                        TickFrequency="1024"
+                                        IsSnapToTickEnabled="True" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Margin="0,14,0,0" Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock FontSize="18" FontWeight="SemiBold" Text="Обновления Launcher" />
+                            <TextBlock Margin="0,7,0,0" Foreground="{StaticResource MutedBrush}" Text="{Binding Version, StringFormat='Текущая версия: {0}'}" />
+                            <TextBlock Margin="0,14,0,0" Text="{Binding UpdateStatusText}" TextWrapping="Wrap" />
+                            <ProgressBar Height="4" Margin="0,12,0,0" Maximum="100"
+                                         Value="{Binding UpdateProgressValue, Mode=OneWay}"
+                                         Visibility="{Binding IsUpdateProgressVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            <WrapPanel Margin="0,16,0,0">
+                                <Button Command="{Binding CheckForUpdatesCommand}" Content="Проверить обновления" />
+                                <Button Margin="8,0,0,0"
+                                        Command="{Binding DownloadUpdateCommand}"
+                                        Content="Скачать"
+                                        Visibility="{Binding HasAvailableUpdate, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                <Button Margin="8,0,0,0"
+                                        Command="{Binding ApplyUpdateCommand}"
+                                        Content="Перезапустить и обновить"
+                                        Visibility="{Binding IsUpdateDownloaded, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Margin="0,14,0,0" Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock FontSize="18" FontWeight="SemiBold" Text="О программе" />
+                            <TextBlock Margin="0,10,0,0" FontWeight="SemiBold" Text="Minecraft Launcher" />
+                            <TextBlock Margin="0,4,0,0" Foreground="{StaticResource MutedBrush}" Text="{Binding Version, StringFormat='Версия {0}'}" />
+                            <TextBlock Margin="0,10,0,0"
+                                       Foreground="{StaticResource MutedBrush}"
+                                       Text="Неофициальный Launcher для подключения к совместимым Minecraft-серверам."
+                                       TextWrapping="Wrap" />
+                            <TextBlock Margin="0,10,0,0" Foreground="{StaticResource AccentBrush}" Text="github.com/lDiestrol/minecraft-launcher" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
     </Grid>
 </Window>
