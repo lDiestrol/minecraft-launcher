@@ -338,6 +338,9 @@ public sealed class LauncherUpdateTests
     {
         public Task<PackSyncResult> SyncAsync(GameProfile profile, IProgress<PackSyncProgress> progress, CancellationToken cancellationToken) =>
             result;
+
+        public Task<ManagedPackRemovalResult> RemoveManagedFilesAsync(string profileId, CancellationToken cancellationToken) =>
+            Task.FromResult(new ManagedPackRemovalResult(0, 0, false));
     }
 
     private sealed class StubGameLaunchService(Task<GameLaunchResult> result) : IGameLaunchService

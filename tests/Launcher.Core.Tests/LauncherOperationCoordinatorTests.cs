@@ -99,6 +99,66 @@ public sealed class LauncherOperationCoordinatorTests
         Assert.False(coordinator.IsActive);
     }
 
+    [Fact]
+    public async Task RemoveManagedFilesAsync_IsRejectedWhilePlayIsActive()
+    {
+        TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        FakePackSyncService pack = new(async (_, _, cancellationToken) =>
+        {
+            started.TrySetResult();
+            await release.Task.WaitAsync(cancellationToken);
+            return PackResult();
+        });
+        LauncherOperationCoordinator coordinator = new(
+            pack,
+            new FakeGameLaunchService((_, _, _) => Task.FromResult(GameResult())));
+        Task<(PackSyncResult Pack, GameLaunchResult Game)> play = coordinator.PlayAsync(
+            Profile(),
+            Request(),
+            Progress<PackSyncProgress>(),
+            Progress<GameLaunchProgress>(),
+            CancellationToken.None);
+        await started.Task;
+
+        PackSyncException exception = await Assert.ThrowsAsync<PackSyncException>(() =>
+            coordinator.RemoveManagedFilesAsync(Profile(), CancellationToken.None));
+
+        Assert.Equal(PackSyncError.AlreadyRunning, exception.Error);
+        Assert.Equal(0, pack.RemoveCallCount);
+        release.TrySetResult();
+        await play;
+    }
+
+    [Fact]
+    public async Task RemoveManagedFilesAsync_IsRejectedWhileRepairIsActive()
+    {
+        TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        FakePackSyncService pack = new(async (_, _, cancellationToken) =>
+        {
+            started.TrySetResult();
+            await release.Task.WaitAsync(cancellationToken);
+            return PackResult();
+        });
+        LauncherOperationCoordinator coordinator = new(
+            pack,
+            new FakeGameLaunchService((_, _, _) => Task.FromResult(GameResult())));
+        Task<PackSyncResult> repair = coordinator.RepairAsync(
+            Profile(),
+            Progress<PackSyncProgress>(),
+            CancellationToken.None);
+        await started.Task;
+
+        PackSyncException exception = await Assert.ThrowsAsync<PackSyncException>(() =>
+            coordinator.RemoveManagedFilesAsync(Profile(), CancellationToken.None));
+
+        Assert.Equal(PackSyncError.AlreadyRunning, exception.Error);
+        Assert.Equal(0, pack.RemoveCallCount);
+        release.TrySetResult();
+        await repair;
+    }
+
     private static GameProfile Profile() => new(
         "main",
         "Main",
@@ -136,14 +196,19 @@ public sealed class LauncherOperationCoordinatorTests
     private sealed class FakePackSyncService : IPackSyncService
     {
         private readonly Func<GameProfile, IProgress<PackSyncProgress>, CancellationToken, Task<PackSyncResult>> _run;
+        private readonly Func<string, CancellationToken, Task<ManagedPackRemovalResult>> _remove;
 
         public FakePackSyncService(
-            Func<GameProfile, IProgress<PackSyncProgress>, CancellationToken, Task<PackSyncResult>> run)
+            Func<GameProfile, IProgress<PackSyncProgress>, CancellationToken, Task<PackSyncResult>> run,
+            Func<string, CancellationToken, Task<ManagedPackRemovalResult>>? remove = null)
         {
             _run = run;
+            _remove = remove ?? ((_, _) => Task.FromResult(new ManagedPackRemovalResult(0, 0, false)));
         }
 
         public int CallCount { get; private set; }
+
+        public int RemoveCallCount { get; private set; }
 
         public Task<PackSyncResult> SyncAsync(
             GameProfile profile,
@@ -152,6 +217,14 @@ public sealed class LauncherOperationCoordinatorTests
         {
             CallCount++;
             return _run(profile, progress, cancellationToken);
+        }
+
+        public Task<ManagedPackRemovalResult> RemoveManagedFilesAsync(
+            string profileId,
+            CancellationToken cancellationToken)
+        {
+            RemoveCallCount++;
+            return _remove(profileId, cancellationToken);
         }
     }
 

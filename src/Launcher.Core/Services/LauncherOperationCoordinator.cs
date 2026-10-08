@@ -60,6 +60,21 @@ public sealed class LauncherOperationCoordinator
         }
     }
 
+    public async Task<ManagedPackRemovalResult> RemoveManagedFilesAsync(
+        GameProfile profile,
+        CancellationToken cancellationToken)
+    {
+        Enter();
+        try
+        {
+            return await _packSyncService.RemoveManagedFilesAsync(profile.Id, cancellationToken);
+        }
+        finally
+        {
+            Exit();
+        }
+    }
+
     private void Enter()
     {
         if (Interlocked.CompareExchange(ref _isActive, 1, 0) != 0)
@@ -67,7 +82,7 @@ public sealed class LauncherOperationCoordinator
             throw new PackSyncException(
                 PackSyncError.AlreadyRunning,
                 "Другая операция Launcher уже выполняется.",
-                "A play or repair operation is already active.");
+                "Another launcher operation is already active.");
         }
     }
 

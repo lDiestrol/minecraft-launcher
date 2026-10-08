@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Windows;
 using System.Windows.Threading;
+using Launcher.App.Services;
 using Launcher.App.ViewModels;
 using Launcher.Core;
 using Launcher.Core.Services;
@@ -77,6 +78,8 @@ public partial class App : Application
                 new WindowsSystemMemoryProvider(),
                 operationCoordinator,
                 updateCoordinator,
+                new ProfileFileManager(paths, _logger),
+                new ManagedPackRemovalConfirmation(),
                 _logger);
 
             await viewModel.InitializeAsync();

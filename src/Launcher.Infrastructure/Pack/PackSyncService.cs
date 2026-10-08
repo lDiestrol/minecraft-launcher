@@ -202,6 +202,99 @@ public sealed class PackSyncService : IPackSyncService
         }
     }
 
+    public async Task<ManagedPackRemovalResult> RemoveManagedFilesAsync(
+        string profileId,
+        CancellationToken cancellationToken)
+    {
+        string instanceDirectory = _paths.GetInstanceDirectory(profileId);
+        try
+        {
+            if (!Directory.Exists(instanceDirectory))
+            {
+                return new ManagedPackRemovalResult(0, 0, false);
+            }
+
+            if (Directory.Exists(_paths.InstancesDirectory))
+            {
+                EnsureNotReparsePoint(_paths.InstancesDirectory);
+            }
+
+            EnsureNotReparsePoint(instanceDirectory);
+            string launcherDirectory = Path.Combine(instanceDirectory, ".launcher");
+            if (!Directory.Exists(launcherDirectory))
+            {
+                return new ManagedPackRemovalResult(0, 0, false);
+            }
+
+            EnsureNotReparsePoint(launcherDirectory);
+            ManagedState? state = await LoadStateAsync(instanceDirectory, profileId, cancellationToken);
+            if (state is null)
+            {
+                return new ManagedPackRemovalResult(0, 0, false);
+            }
+
+            List<(string RelativePath, string Destination)> files = new(state.Files.Count);
+            foreach (ManagedStateFile file in state.Files)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                string relativePath = ManagedPathPolicy.ValidateManifestPath(file.Path);
+                string destination = ManagedPathPolicy.ResolveDestination(instanceDirectory, relativePath);
+                files.Add((relativePath, destination));
+            }
+
+            int deletedFiles = 0;
+            int missingFiles = 0;
+            foreach ((string relativePath, string destination) in files)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (File.Exists(destination))
+                {
+                    File.Delete(destination);
+                    deletedFiles++;
+                    _logger.Info($"Removed managed file by user request: profile={profileId}, path={relativePath}.");
+                }
+                else
+                {
+                    missingFiles++;
+                }
+
+                DeleteEmptyParents(destination, instanceDirectory, relativePath);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            string statePath = GetStatePath(instanceDirectory);
+            EnsureNotReparsePoint(statePath);
+            File.Delete(statePath);
+            _logger.Info(
+                $"Managed pack removed: profile={profileId}, deleted={deletedFiles}, missing={missingFiles}.");
+            return new ManagedPackRemovalResult(deletedFiles, missingFiles, true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (PackSyncException)
+        {
+            throw;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            throw Failure(
+                PackSyncError.DirectoryAccessDenied,
+                "Нет доступа к файлам игровой сборки.",
+                $"Access denied while removing managed files for profile '{profileId}'.",
+                exception);
+        }
+        catch (IOException exception)
+        {
+            throw Failure(
+                PackSyncError.Unknown,
+                "Не удалось удалить управляемые файлы сборки.",
+                $"I/O failure while removing managed files for profile '{profileId}'.",
+                exception);
+        }
+    }
+
     private async Task<PackManifest> FetchManifestAsync(GameProfile profile, CancellationToken cancellationToken)
     {
         using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(

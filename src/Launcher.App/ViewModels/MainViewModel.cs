@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using Launcher.App.Services;
 using Launcher.Core.Models;
 using Launcher.Core.Policies;
 using Launcher.Core.Services;
@@ -14,6 +15,8 @@ public sealed class MainViewModel : ObservableObject
     private readonly ISystemMemoryProvider _memoryProvider;
     private readonly LauncherOperationCoordinator _operationCoordinator;
     private readonly LauncherUpdateCoordinator _updateCoordinator;
+    private readonly IProfileFileManager _profileFileManager;
+    private readonly IManagedPackRemovalConfirmation _packRemovalConfirmation;
     private readonly IAppLogger _logger;
     private readonly SemaphoreSlim _saveLock = new(1, 1);
     private LauncherSettings _settings = new();
@@ -53,6 +56,8 @@ public sealed class MainViewModel : ObservableObject
         ISystemMemoryProvider memoryProvider,
         LauncherOperationCoordinator operationCoordinator,
         LauncherUpdateCoordinator updateCoordinator,
+        IProfileFileManager profileFileManager,
+        IManagedPackRemovalConfirmation packRemovalConfirmation,
         IAppLogger logger)
     {
         _serverClient = serverClient;
@@ -60,6 +65,8 @@ public sealed class MainViewModel : ObservableObject
         _memoryProvider = memoryProvider;
         _operationCoordinator = operationCoordinator;
         _updateCoordinator = updateCoordinator;
+        _profileFileManager = profileFileManager;
+        _packRemovalConfirmation = packRemovalConfirmation;
         _logger = logger;
 
         ConnectCommand = new AsyncRelayCommand(ConnectAsync, CanConnect);
@@ -67,6 +74,19 @@ public sealed class MainViewModel : ObservableObject
         RepairCommand = new AsyncRelayCommand(
             RepairAsync,
             () => !IsBusy && _bootstrap is not null && SelectedProfile is not null);
+        OpenGameFolderCommand = new RelayCommand(
+            () => OpenProfileDirectory(ProfileDirectoryKind.Game),
+            CanOpenProfileDirectory);
+        OpenModsFolderCommand = new RelayCommand(
+            () => OpenProfileDirectory(ProfileDirectoryKind.Mods),
+            CanOpenProfileDirectory);
+        OpenResourcePacksFolderCommand = new RelayCommand(
+            () => OpenProfileDirectory(ProfileDirectoryKind.ResourcePacks),
+            CanOpenProfileDirectory);
+        OpenShaderPacksFolderCommand = new RelayCommand(
+            () => OpenProfileDirectory(ProfileDirectoryKind.ShaderPacks),
+            CanOpenProfileDirectory);
+        DeleteManagedPackCommand = new AsyncRelayCommand(DeleteManagedPackAsync, CanDeleteManagedPack);
         CancelGameCommand = new RelayCommand(CancelGame, () => IsGamePreparing);
         OpenSettingsCommand = new RelayCommand(OpenSettings, () => !IsBusy);
         CancelSettingsCommand = new RelayCommand(CancelSettings, () => !IsBusy);
@@ -86,7 +106,7 @@ public sealed class MainViewModel : ObservableObject
             ? "Portable-режим: проверка обновлений выполняется вручную."
             : _updateCoordinator.IsInstalled
                 ? "Проверка обновлений выполняется вручную."
-                : "Обновления доступны в установленной версии Launcher.";
+                : "Development mode: Velopack update недоступен. Проверка обновлений работает только в установленной версии Launcher.";
     }
 
     public string Version => $"v{_updateCoordinator.CurrentVersion}";
@@ -98,6 +118,16 @@ public sealed class MainViewModel : ObservableObject
     public AsyncRelayCommand PlayCommand { get; }
 
     public AsyncRelayCommand RepairCommand { get; }
+
+    public RelayCommand OpenGameFolderCommand { get; }
+
+    public RelayCommand OpenModsFolderCommand { get; }
+
+    public RelayCommand OpenResourcePacksFolderCommand { get; }
+
+    public RelayCommand OpenShaderPacksFolderCommand { get; }
+
+    public AsyncRelayCommand DeleteManagedPackCommand { get; }
 
     public RelayCommand CancelGameCommand { get; }
 
@@ -214,6 +244,7 @@ public sealed class MainViewModel : ObservableObject
             if (SetProperty(ref _selectedProfile, value))
             {
                 RepairCommand.RaiseCanExecuteChanged();
+                RaiseProfileFileCommandCanExecuteChanged();
                 ScheduleSettingsSave();
             }
         }
@@ -278,6 +309,7 @@ public sealed class MainViewModel : ObservableObject
                 DownloadUpdateCommand.RaiseCanExecuteChanged();
                 ApplyUpdateCommand.RaiseCanExecuteChanged();
                 DismissUpdateOfferCommand.RaiseCanExecuteChanged();
+                RaiseProfileFileCommandCanExecuteChanged();
             }
         }
     }
@@ -324,7 +356,13 @@ public sealed class MainViewModel : ObservableObject
     public bool IsGameRunning
     {
         get => _isGameRunning;
-        private set => SetProperty(ref _isGameRunning, value);
+        private set
+        {
+            if (SetProperty(ref _isGameRunning, value))
+            {
+                DeleteManagedPackCommand.RaiseCanExecuteChanged();
+            }
+        }
     }
 
     public bool IsProgressIndeterminate
@@ -671,6 +709,114 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(IsUpdateOfferVisible));
         OnPropertyChanged(nameof(IsUpdateOfferDownloadVisible));
         OnPropertyChanged(nameof(IsUpdateOfferApplyVisible));
+    }
+
+    private bool CanOpenProfileDirectory() => SelectedProfile is not null;
+
+    private bool CanDeleteManagedPack() =>
+        SelectedProfile is not null &&
+        !IsBusy &&
+        !IsGameRunning &&
+        !_operationCoordinator.IsActive;
+
+    private void RaiseProfileFileCommandCanExecuteChanged()
+    {
+        OpenGameFolderCommand.RaiseCanExecuteChanged();
+        OpenModsFolderCommand.RaiseCanExecuteChanged();
+        OpenResourcePacksFolderCommand.RaiseCanExecuteChanged();
+        OpenShaderPacksFolderCommand.RaiseCanExecuteChanged();
+        DeleteManagedPackCommand.RaiseCanExecuteChanged();
+    }
+
+    private void OpenProfileDirectory(ProfileDirectoryKind directoryKind)
+    {
+        ErrorText = null;
+        if (SelectedProfile is null)
+        {
+            ErrorText = "Выберите игровую сборку.";
+            return;
+        }
+
+        try
+        {
+            _profileFileManager.OpenDirectory(SelectedProfile.Id, directoryKind);
+        }
+        catch (Exception exception)
+        {
+            _logger.Error(
+                $"Could not open profile directory: profile={SelectedProfile.Id}, kind={directoryKind}.",
+                exception);
+            StatusText = "Ошибка";
+            ErrorText = "Не удалось открыть папку выбранной сборки. Подробности записаны в лог.";
+        }
+    }
+
+    private async Task DeleteManagedPackAsync()
+    {
+        ErrorText = null;
+        if (SelectedProfile is null)
+        {
+            ErrorText = "Выберите игровую сборку.";
+            return;
+        }
+
+        if (!CanDeleteManagedPack())
+        {
+            ErrorText = "Дождитесь завершения запуска, проверки или другой операции Launcher.";
+            return;
+        }
+
+        GameProfile selectedProfile = SelectedProfile;
+        if (!_packRemovalConfirmation.Confirm(selectedProfile))
+        {
+            return;
+        }
+
+        if (!CanDeleteManagedPack())
+        {
+            ErrorText = "Другая операция Launcher уже началась. Удаление отменено.";
+            return;
+        }
+
+        IsBusy = true;
+        IsProgressIndeterminate = true;
+        ProgressValue = 0;
+        ProgressDetails = string.Empty;
+        StatusText = "Удаление файлов сборки...";
+        try
+        {
+            ManagedPackRemovalResult result = await Task.Run(() =>
+                _operationCoordinator.RemoveManagedFilesAsync(selectedProfile, CancellationToken.None));
+            if (!result.RemovedState)
+            {
+                StatusText = "Установленная сборка не найдена";
+                ProgressDetails = "Состояние управляемых файлов отсутствует; пользовательские данные не изменены.";
+            }
+            else
+            {
+                StatusText = "Требуется загрузка сборки";
+                ProgressDetails =
+                    $"Удалено управляемых файлов: {result.DeletedFiles}; отсутствовало: {result.MissingFiles}. " +
+                    "Следующий запуск или проверка скачает сборку заново.";
+            }
+        }
+        catch (PackSyncException exception)
+        {
+            _logger.Error(exception.Message, exception);
+            StatusText = "Ошибка";
+            ErrorText = exception.UserMessage;
+        }
+        catch (Exception exception)
+        {
+            _logger.Error("Unexpected managed pack removal failure.", exception);
+            StatusText = "Ошибка";
+            ErrorText = "Не удалось удалить файлы сборки. Подробности записаны в лог.";
+        }
+        finally
+        {
+            IsProgressIndeterminate = true;
+            IsBusy = false;
+        }
     }
 
     private async Task PlayAsync()
