@@ -60,7 +60,11 @@ public partial class App : Application
             };
             _gameHttpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"MinecraftLauncher/{LauncherVersion.Current}");
 
-            CmlLibGameLaunchService gameLaunchService = new(_gameHttpClient, paths, _logger);
+            CmlLibGameLaunchService gameLaunchService = new(
+                _gameHttpClient,
+                paths,
+                _logger,
+                new FileSharedInstallLock(paths, _logger));
             PackSyncService packSyncService = new(_packHttpClient, paths, _logger);
             LauncherOperationCoordinator operationCoordinator = new(
                 packSyncService,

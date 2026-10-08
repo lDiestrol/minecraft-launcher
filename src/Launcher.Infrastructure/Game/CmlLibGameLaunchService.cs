@@ -19,12 +19,20 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
     private readonly HttpClient _httpClient;
     private readonly LauncherDataPaths _paths;
     private readonly IAppLogger _logger;
+    private readonly ISharedInstallLock _sharedInstallLock;
+    private readonly GameProcessGuardianClient _guardianClient;
 
-    public CmlLibGameLaunchService(HttpClient httpClient, LauncherDataPaths paths, IAppLogger logger)
+    public CmlLibGameLaunchService(
+        HttpClient httpClient,
+        LauncherDataPaths paths,
+        IAppLogger logger,
+        ISharedInstallLock sharedInstallLock)
     {
         _httpClient = httpClient;
         _paths = paths;
         _logger = logger;
+        _sharedInstallLock = sharedInstallLock;
+        _guardianClient = new GameProcessGuardianClient(paths, logger);
     }
 
     public async Task<GameLaunchResult> LaunchAsync(
@@ -57,93 +65,113 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
 
             currentStage = GameLaunchStage.CheckingMinecraft;
             Report(progress, currentStage, $"Проверка Minecraft {request.MinecraftVersion}");
-            _logger.Info($"Installing or verifying vanilla Minecraft {request.MinecraftVersion} and its runtime.");
-
-            currentStage = GameLaunchStage.DownloadingMinecraft;
-            await launcher.InstallAsync(
-                request.MinecraftVersion,
-                downloadProgress.FileProgress,
-                downloadProgress.ByteProgress,
+            IDisposable? sharedInstallLease = await _sharedInstallLock.TryAcquireAsync(
+                TimeSpan.FromSeconds(15),
                 cancellationToken);
-            _logger.Info($"Minecraft {request.MinecraftVersion} files and runtime verified.");
-
-            currentStage = GameLaunchStage.PreparingJava;
-            Report(progress, currentStage, "Проверка Java runtime");
-            IVersion vanillaVersion = await launcher.GetVersionAsync(request.MinecraftVersion, cancellationToken);
-            string vanillaJava = EnsureManagedJavaExecutable(
-                launcher.GetJavaPath(vanillaVersion),
-                request.MinecraftVersion);
-            _logger.Info($"Mojang Java runtime prepared: {vanillaJava}.");
-
-            currentStage = GameLaunchStage.InstallingFabric;
-            Report(progress, currentStage, $"Установка Fabric {request.LoaderVersion}");
-            _logger.Info($"Installing exact Fabric loader {request.LoaderVersion} for {request.MinecraftVersion}.");
-            FabricInstaller fabricInstaller = new(_httpClient);
-            cancellationToken.ThrowIfCancellationRequested();
-            IReadOnlyCollection<FabricLoader> loaders = await fabricInstaller.GetLoaders(request.MinecraftVersion);
-            cancellationToken.ThrowIfCancellationRequested();
-            bool loaderExists = loaders.Any(loader =>
-                request.LoaderVersion.Equals(loader.Version, StringComparison.Ordinal));
-            if (!loaderExists)
+            if (sharedInstallLease is null)
             {
                 throw new GameLaunchException(
-                    GameLaunchError.FabricVersionUnavailable,
-                    $"Версия Fabric {request.LoaderVersion} не существует или несовместима с Minecraft {request.MinecraftVersion}.",
-                    $"Fabric loader {request.LoaderVersion} was not returned for Minecraft {request.MinecraftVersion}.");
+                    GameLaunchError.SharedInstallBusy,
+                    "Другая сборка сейчас обновляет общие файлы Minecraft. Повторите запуск через несколько секунд.",
+                    "Timed out waiting for the cross-process shared Minecraft install lock.");
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
-            string installedVersionId = await fabricInstaller.Install(
-                request.MinecraftVersion,
-                request.LoaderVersion,
-                sharedPath);
-            cancellationToken.ThrowIfCancellationRequested();
-            _logger.Info($"Fabric profile installed with CmlLib version id '{installedVersionId}'.");
-
-            currentStage = GameLaunchStage.CheckingFiles;
-            Report(progress, currentStage, "Проверка файлов Fabric-профиля");
-            await launcher.InstallAsync(
-                installedVersionId,
-                downloadProgress.FileProgress,
-                downloadProgress.ByteProgress,
-                cancellationToken);
-            _logger.Info($"Fabric profile '{installedVersionId}' files verified.");
-
-            currentStage = GameLaunchStage.PreparingJava;
-            Report(progress, currentStage, "Подготовка Java для запуска");
-            IVersion fabricVersion = await launcher.GetVersionAsync(installedVersionId, cancellationToken);
-            string javaPath = EnsureManagedJavaExecutable(
-                launcher.GetJavaPath(fabricVersion),
-                installedVersionId);
-
-            _logger.Info($"Java executable selected: {javaPath}.");
-
-            currentStage = GameLaunchStage.PreparingLaunch;
-            Report(progress, currentStage, "Подготовка команды запуска");
-            MLaunchOption launchOption = new()
+            string installedVersionId;
+            string javaPath;
+            GuardedGameSession gameSession;
+            using (sharedInstallLease)
             {
-                Session = MSession.CreateOfflineSession(request.Nickname),
-                MaximumRamMb = request.RamMb,
-                MinimumRamMb = Math.Min(1024, request.RamMb),
-                JavaPath = javaPath,
-                Path = instancePath,
-                ServerIp = request.ServerAddress,
-                ServerPort = request.ServerPort,
-                GameLauncherName = "MinecraftLauncher",
-                GameLauncherVersion = LauncherVersion.Current,
-            };
+                _logger.Info(
+                    $"Installing or verifying vanilla Minecraft {request.MinecraftVersion} and its runtime.");
 
-            using Process process = await launcher.BuildProcessAsync(
-                installedVersionId,
-                launchOption,
-                cancellationToken);
-            ProcessWrapper processWrapper = new(process);
-            processWrapper.OutputReceived += (_, line) => _logger.Info($"[Minecraft] {line}");
+                currentStage = GameLaunchStage.DownloadingMinecraft;
+                await launcher.InstallAsync(
+                    request.MinecraftVersion,
+                    downloadProgress.FileProgress,
+                    downloadProgress.ByteProgress,
+                    cancellationToken);
+                _logger.Info($"Minecraft {request.MinecraftVersion} files and runtime verified.");
 
-            currentStage = GameLaunchStage.StartingMinecraft;
-            Report(progress, currentStage, "Запуск Minecraft");
-            processWrapper.StartWithEvents();
-            int processId = processWrapper.Process.Id;
+                currentStage = GameLaunchStage.PreparingJava;
+                Report(progress, currentStage, "Проверка Java runtime");
+                IVersion vanillaVersion = await launcher.GetVersionAsync(request.MinecraftVersion, cancellationToken);
+                string vanillaJava = EnsureManagedJavaExecutable(
+                    launcher.GetJavaPath(vanillaVersion),
+                    request.MinecraftVersion);
+                _logger.Info($"Mojang Java runtime prepared: {vanillaJava}.");
+
+                currentStage = GameLaunchStage.InstallingFabric;
+                Report(progress, currentStage, $"Установка Fabric {request.LoaderVersion}");
+                _logger.Info(
+                    $"Installing exact Fabric loader {request.LoaderVersion} for {request.MinecraftVersion}.");
+                FabricInstaller fabricInstaller = new(_httpClient);
+                cancellationToken.ThrowIfCancellationRequested();
+                IReadOnlyCollection<FabricLoader> loaders = await fabricInstaller.GetLoaders(request.MinecraftVersion);
+                cancellationToken.ThrowIfCancellationRequested();
+                bool loaderExists = loaders.Any(loader =>
+                    request.LoaderVersion.Equals(loader.Version, StringComparison.Ordinal));
+                if (!loaderExists)
+                {
+                    throw new GameLaunchException(
+                        GameLaunchError.FabricVersionUnavailable,
+                        $"Версия Fabric {request.LoaderVersion} не существует или несовместима с Minecraft {request.MinecraftVersion}.",
+                        $"Fabric loader {request.LoaderVersion} was not returned for Minecraft {request.MinecraftVersion}.");
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                installedVersionId = await fabricInstaller.Install(
+                    request.MinecraftVersion,
+                    request.LoaderVersion,
+                    sharedPath);
+                cancellationToken.ThrowIfCancellationRequested();
+                _logger.Info($"Fabric profile installed with CmlLib version id '{installedVersionId}'.");
+
+                currentStage = GameLaunchStage.CheckingFiles;
+                Report(progress, currentStage, "Проверка файлов Fabric-профиля");
+                await launcher.InstallAsync(
+                    installedVersionId,
+                    downloadProgress.FileProgress,
+                    downloadProgress.ByteProgress,
+                    cancellationToken);
+                _logger.Info($"Fabric profile '{installedVersionId}' files verified.");
+
+                currentStage = GameLaunchStage.PreparingJava;
+                Report(progress, currentStage, "Подготовка Java для запуска");
+                IVersion fabricVersion = await launcher.GetVersionAsync(installedVersionId, cancellationToken);
+                javaPath = EnsureManagedJavaExecutable(
+                    launcher.GetJavaPath(fabricVersion),
+                    installedVersionId);
+                _logger.Info($"Java executable selected: {javaPath}.");
+
+                currentStage = GameLaunchStage.PreparingLaunch;
+                Report(progress, currentStage, "Подготовка команды запуска");
+                MLaunchOption launchOption = new()
+                {
+                    Session = MSession.CreateOfflineSession(request.Nickname),
+                    MaximumRamMb = request.RamMb,
+                    MinimumRamMb = Math.Min(1024, request.RamMb),
+                    JavaPath = javaPath,
+                    Path = instancePath,
+                    ServerIp = request.ServerAddress,
+                    ServerPort = request.ServerPort,
+                    GameLauncherName = "MinecraftLauncher",
+                    GameLauncherVersion = LauncherVersion.Current,
+                };
+
+                using Process process = await launcher.BuildProcessAsync(
+                    installedVersionId,
+                    launchOption,
+                    cancellationToken);
+                process.StartInfo.WorkingDirectory = instanceDirectory;
+                currentStage = GameLaunchStage.StartingMinecraft;
+                Report(progress, currentStage, "Запуск Minecraft");
+                gameSession = await _guardianClient.StartAsync(
+                    request.ProfileId,
+                    process.StartInfo,
+                    cancellationToken);
+            }
+
+            int processId = gameSession.ProcessId;
             _logger.Info($"Minecraft process started: PID={processId}, versionId={installedVersionId}.");
             Report(
                 progress,
@@ -151,7 +179,7 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
                 "Minecraft запущен",
                 processId);
 
-            int exitCode = await processWrapper.WaitForExitTaskAsync();
+            int exitCode = await gameSession.WaitForExitAsync(cancellationToken);
             _logger.Info($"Minecraft process PID={processId} exited with code {exitCode}.");
             Report(
                 progress,

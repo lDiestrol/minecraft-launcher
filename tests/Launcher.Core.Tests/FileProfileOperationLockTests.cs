@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Launcher.Infrastructure.Logging;
 using Launcher.Infrastructure.Persistence;
 
@@ -58,10 +59,133 @@ public sealed class FileProfileOperationLockTests
         lease!.Dispose();
     }
 
+    [Fact]
+    public void ActiveGameOwnershipHandle_BlocksProfileOperationsUntilReleased()
+    {
+        using TestDirectory directory = new();
+        LauncherDataPaths paths = new(directory.Path);
+        ProfileGameActivity activity = new(paths, new NullAppLogger());
+        FileProfileOperationLock profileLock = new(paths, new NullAppLogger());
+
+        Assert.True(activity.TryAcquireOwnership("main", out IDisposable? gameOwnership));
+        Assert.NotNull(gameOwnership);
+        Assert.False(profileLock.TryAcquire("main", out IDisposable? blockedLease));
+        Assert.Null(blockedLease);
+
+        gameOwnership!.Dispose();
+
+        Assert.True(profileLock.TryAcquire("main", out IDisposable? recoveredLease));
+        recoveredLease!.Dispose();
+    }
+
+    [Fact]
+    public void LivePidAndStartTime_BlockAfterGuardianHandleIsLost()
+    {
+        using TestDirectory directory = new();
+        LauncherDataPaths paths = new(directory.Path);
+        ProfileGameActivity activity = new(paths, new NullAppLogger());
+        FileProfileOperationLock profileLock = new(paths, new NullAppLogger());
+        using Process current = Process.GetCurrentProcess();
+        const string token = "guardian-crash-recovery";
+        activity.WriteState("main", current.Id, current.StartTime.ToUniversalTime(), token);
+
+        Assert.False(profileLock.TryAcquire("main", out IDisposable? lease));
+        Assert.Null(lease);
+
+        activity.DeleteState("main", token);
+    }
+
+    [Fact]
+    public void ReusedPidWithDifferentStartTime_IsTreatedAsStale()
+    {
+        using TestDirectory directory = new();
+        LauncherDataPaths paths = new(directory.Path);
+        ProfileGameActivity activity = new(paths, new NullAppLogger());
+        FileProfileOperationLock profileLock = new(paths, new NullAppLogger());
+        using Process current = Process.GetCurrentProcess();
+        activity.WriteState(
+            "main",
+            current.Id,
+            current.StartTime.ToUniversalTime().AddTicks(1),
+            "reused-pid");
+
+        Assert.True(profileLock.TryAcquire("main", out IDisposable? lease));
+        Assert.False(File.Exists(activity.GetStatePath("main")));
+        lease!.Dispose();
+    }
+
+    [Fact]
+    public void MissingProcessState_IsRecoveredAsStale()
+    {
+        using TestDirectory directory = new();
+        LauncherDataPaths paths = new(directory.Path);
+        ProfileGameActivity activity = new(paths, new NullAppLogger());
+        FileProfileOperationLock profileLock = new(paths, new NullAppLogger());
+        activity.WriteState(
+            "main",
+            int.MaxValue,
+            DateTime.UtcNow,
+            "stale-process");
+
+        Assert.True(profileLock.TryAcquire("main", out IDisposable? lease));
+        Assert.False(File.Exists(activity.GetStatePath("main")));
+        lease!.Dispose();
+    }
+
+    [Fact]
+    public void MalformedState_IsRemovedWithoutEscapingLockDirectory()
+    {
+        using TestDirectory directory = new();
+        LauncherDataPaths paths = new(directory.Path);
+        ProfileGameActivity activity = new(paths, new NullAppLogger());
+        FileProfileOperationLock profileLock = new(paths, new NullAppLogger());
+        string statePath = activity.GetStatePath("main");
+        File.WriteAllText(statePath, "{not-json");
+
+        Assert.True(profileLock.TryAcquire("main", out IDisposable? lease));
+        Assert.False(File.Exists(statePath));
+        lease!.Dispose();
+    }
+
+    [Fact]
+    public void StructurallyInvalidState_IsRecoveredWithoutNullDereference()
+    {
+        using TestDirectory directory = new();
+        LauncherDataPaths paths = new(directory.Path);
+        ProfileGameActivity activity = new(paths, new NullAppLogger());
+        FileProfileOperationLock profileLock = new(paths, new NullAppLogger());
+        string statePath = activity.GetStatePath("main");
+        File.WriteAllText(statePath, "{\"SchemaVersion\":1,\"ProcessId\":123}");
+
+        Assert.True(profileLock.TryAcquire("main", out IDisposable? lease));
+        Assert.False(File.Exists(statePath));
+        lease!.Dispose();
+    }
+
+    [Fact]
+    public void ActiveGameState_IsIsolatedToItsProfile()
+    {
+        using TestDirectory directory = new();
+        LauncherDataPaths paths = new(directory.Path);
+        ProfileGameActivity activity = new(paths, new NullAppLogger());
+        FileProfileOperationLock profileLock = new(paths, new NullAppLogger());
+        using Process current = Process.GetCurrentProcess();
+        const string token = "profile-isolation";
+        activity.WriteState("main", current.Id, current.StartTime.ToUniversalTime(), token);
+
+        Assert.False(profileLock.TryAcquire("main", out _));
+        Assert.True(profileLock.TryAcquire("secondary", out IDisposable? secondaryLease));
+
+        secondaryLease!.Dispose();
+        activity.DeleteState("main", token);
+    }
+
     [Theory]
     [InlineData("../outside")]
     [InlineData("main/other")]
     [InlineData("C:/outside")]
+    [InlineData("..")]
+    [InlineData("CON")]
     public void TryAcquire_RejectsUnsafeProfileId(string profileId)
     {
         using TestDirectory directory = new();

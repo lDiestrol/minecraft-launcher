@@ -4,43 +4,45 @@ namespace Launcher.Infrastructure.Persistence;
 
 public sealed class FileProfileOperationLock : IProfileOperationLock
 {
-    private const int SharingViolation = 32;
-    private const int LockViolation = 33;
     private readonly LauncherDataPaths _paths;
     private readonly IAppLogger _logger;
+    private readonly ProfileGameActivity _gameActivity;
 
     public FileProfileOperationLock(LauncherDataPaths paths, IAppLogger logger)
     {
         _paths = paths;
         _logger = logger;
+        _gameActivity = new ProfileGameActivity(paths, logger);
     }
 
     public bool TryAcquire(string profileId, out IDisposable? lease)
     {
-        _ = _paths.GetInstanceDirectory(profileId);
-        Directory.CreateDirectory(_paths.RootDirectory);
-        EnsureNotReparsePoint(_paths.RootDirectory);
-
-        string locksDirectory = Path.Combine(_paths.RootDirectory, ".locks");
-        Directory.CreateDirectory(locksDirectory);
-        EnsureNotReparsePoint(locksDirectory);
-
-        string lockPath = ResolveLockPath(locksDirectory, profileId);
-        EnsureNotReparsePoint(lockPath);
+        string lockPath = ProfileLockFiles.GetProfilePath(_paths, profileId, ".lock");
+        FileStream? stream = null;
         try
         {
-            FileStream stream = new(
+            stream = new FileStream(
                 lockPath,
                 FileMode.OpenOrCreate,
                 FileAccess.ReadWrite,
                 FileShare.None,
                 bufferSize: 1,
                 FileOptions.WriteThrough);
+
+            if (_gameActivity.IsActive(profileId))
+            {
+                stream.Dispose();
+                _logger.Info($"Profile operation rejected because Minecraft is active: profile={profileId}.");
+                lease = null;
+                return false;
+            }
+
             _logger.Info($"Acquired profile operation lock: profile={profileId}, path={lockPath}.");
             lease = new FileLease(stream, profileId, lockPath, _logger);
+            stream = null;
             return true;
         }
-        catch (IOException exception) when (IsContention(exception))
+        catch (IOException exception) when (ProfileLockFiles.IsContention(exception))
         {
             _logger.Info($"Profile operation lock is busy: profile={profileId}, path={lockPath}.");
             lease = null;
@@ -62,39 +64,9 @@ public sealed class FileProfileOperationLock : IProfileOperationLock
                 $"I/O failure while acquiring profile lock '{lockPath}'.",
                 exception);
         }
-    }
-
-    private static string ResolveLockPath(string locksDirectory, string profileId)
-    {
-        string root = Path.GetFullPath(locksDirectory)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        string lockPath = Path.GetFullPath(Path.Combine(root, $"{profileId}.lock"));
-        if (!lockPath.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        finally
         {
-            throw new PackSyncException(
-                PackSyncError.UnsafeManagedPath,
-                "Путь блокировки игровой сборки небезопасен.",
-                $"Profile lock path escapes the locks root: {lockPath}.");
-        }
-
-        return lockPath;
-    }
-
-    private static bool IsContention(IOException exception)
-    {
-        int nativeError = exception.HResult & 0xFFFF;
-        return nativeError is SharingViolation or LockViolation;
-    }
-
-    private static void EnsureNotReparsePoint(string path)
-    {
-        if ((File.Exists(path) || Directory.Exists(path)) &&
-            (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
-        {
-            throw new PackSyncException(
-                PackSyncError.UnsafeManagedPath,
-                "Путь блокировки игровой сборки проходит через небезопасную ссылку.",
-                $"Reparse point is not allowed in profile lock path: {path}.");
+            stream?.Dispose();
         }
     }
 
