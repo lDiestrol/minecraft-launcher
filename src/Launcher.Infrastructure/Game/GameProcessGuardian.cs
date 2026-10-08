@@ -57,10 +57,14 @@ public static class GameProcessGuardian
     internal static async Task<int> RunAsync(
         LauncherDataPaths paths,
         string requestPath,
-        IAppLogger logger)
+        IAppLogger logger,
+        Func<Task>? beforeProcessStart = null,
+        Func<Task>? afterCancellationDecision = null,
+        Func<Process, Task>? afterProcessStart = null)
     {
         string fullRequestPath = ValidateRequestPath(paths, requestPath);
         string statusPath = GetStatusPath(fullRequestPath);
+        string cancellationPath = GetCancellationPath(fullRequestPath);
         GameGuardianRequest request;
         try
         {
@@ -78,6 +82,7 @@ public static class GameProcessGuardian
                 "failed",
                 Error: exception.Message), logger);
             TryDelete(fullRequestPath);
+            TryDelete(cancellationPath);
             return 2;
         }
 
@@ -90,6 +95,7 @@ public static class GameProcessGuardian
                 request.OwnershipToken,
                 "failed",
                 Error: "Another game guardian already owns this profile."), logger);
+            TryDelete(cancellationPath);
             return 3;
         }
 
@@ -122,12 +128,46 @@ public static class GameProcessGuardian
                     };
                 }
 
+                if (beforeProcessStart is not null)
+                {
+                    await beforeProcessStart();
+                }
+
+                ProfileLockFiles.EnsureNotReparsePoint(cancellationPath);
+                if (File.Exists(cancellationPath))
+                {
+                    TryWriteStatus(statusPath, new GameGuardianStatus(
+                        CurrentSchemaVersion,
+                        request.OwnershipToken,
+                        "cancelled"), logger);
+                    logger.Info($"Game guardian cancelled before Java start: profile={request.ProfileId}.");
+                    TryDelete(cancellationPath);
+                    return 5;
+                }
+
+                if (afterCancellationDecision is not null)
+                {
+                    await afterCancellationDecision();
+                }
+
                 if (!process.Start())
                 {
                     throw new InvalidOperationException("Minecraft process did not start.");
                 }
 
                 started = true;
+                if (afterProcessStart is not null)
+                {
+                    await afterProcessStart(process);
+                }
+
+                DateTime startTimeUtc = process.StartTime.ToUniversalTime();
+                activity.WriteState(
+                    request.ProfileId,
+                    process.Id,
+                    startTimeUtc,
+                    request.OwnershipToken);
+                TryDelete(cancellationPath);
                 if (request.RedirectStandardOutput)
                 {
                     process.BeginOutputReadLine();
@@ -138,12 +178,6 @@ public static class GameProcessGuardian
                     process.BeginErrorReadLine();
                 }
 
-                DateTime startTimeUtc = process.StartTime.ToUniversalTime();
-                activity.WriteState(
-                    request.ProfileId,
-                    process.Id,
-                    startTimeUtc,
-                    request.OwnershipToken);
                 TryWriteStatus(statusPath, new GameGuardianStatus(
                     CurrentSchemaVersion,
                     request.OwnershipToken,
@@ -165,6 +199,7 @@ public static class GameProcessGuardian
                     startTimeUtc.Ticks,
                     exitCode), logger);
                 logger.Info($"Guarded Minecraft process PID={process.Id} exited with code {exitCode}.");
+                TryDelete(cancellationPath);
                 return 0;
             }
             catch (Exception exception)
@@ -191,6 +226,7 @@ public static class GameProcessGuardian
                     started ? process.Id : null,
                     ExitCode: started && HasExited(process) ? process.ExitCode : null,
                     Error: exception.Message), logger);
+                TryDelete(cancellationPath);
                 return 4;
             }
         }
@@ -214,6 +250,17 @@ public static class GameProcessGuardian
         }
 
         return requestPath[..^requestSuffix.Length] + ".status.json";
+    }
+
+    internal static string GetCancellationPath(string requestPath)
+    {
+        const string requestSuffix = ".request.json";
+        if (!requestPath.EndsWith(requestSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("Guardian request file has an invalid name.");
+        }
+
+        return requestPath[..^requestSuffix.Length] + ".cancel";
     }
 
     private static string ValidateRequestPath(LauncherDataPaths paths, string requestPath)
@@ -366,15 +413,34 @@ public static class GameProcessGuardian
 
 internal sealed class GameProcessGuardianClient
 {
-    private static readonly TimeSpan StartupTimeout = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(100);
     private readonly LauncherDataPaths _paths;
     private readonly IAppLogger _logger;
+    private readonly Func<string, Process> _guardianStarter;
+    private readonly TimeSpan _startupTimeout;
+    private readonly TimeSpan _pollInterval;
 
     public GameProcessGuardianClient(LauncherDataPaths paths, IAppLogger logger)
+        : this(
+            paths,
+            logger,
+            StartGuardianProcess,
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromMilliseconds(100))
+    {
+    }
+
+    internal GameProcessGuardianClient(
+        LauncherDataPaths paths,
+        IAppLogger logger,
+        Func<string, Process> guardianStarter,
+        TimeSpan startupTimeout,
+        TimeSpan pollInterval)
     {
         _paths = paths;
         _logger = logger;
+        _guardianStarter = guardianStarter;
+        _startupTimeout = startupTimeout;
+        _pollInterval = pollInterval;
     }
 
     public async Task<GuardedGameSession> StartAsync(
@@ -383,43 +449,36 @@ internal sealed class GameProcessGuardianClient
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        string? launcherPath = Environment.ProcessPath;
-        if (string.IsNullOrWhiteSpace(launcherPath) || !File.Exists(launcherPath))
-        {
-            throw new GameLaunchException(
-                GameLaunchError.ProcessCreationFailed,
-                "Не удалось запустить защитный процесс Minecraft.",
-                "The current Launcher executable path is unavailable.");
-        }
-
         string token = Guid.NewGuid().ToString("N");
         string guardianDirectory = GameProcessGuardian.GetGuardianDirectory(_paths);
         string requestPath = ProfileLockFiles.ResolveChildPath(
             guardianDirectory,
             $"{token}.request.json");
         string statusPath = GameProcessGuardian.GetStatusPath(requestPath);
+        string cancellationPath = GameProcessGuardian.GetCancellationPath(requestPath);
         GameGuardianRequest request = CreateRequest(token, profileId, gameStartInfo);
-        WriteRequest(requestPath, request);
-
-        ProcessStartInfo guardianStartInfo = new()
-        {
-            FileName = launcherPath,
-            WorkingDirectory = AppContext.BaseDirectory,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        guardianStartInfo.ArgumentList.Add(GameProcessGuardian.CommandLineSwitch);
-        guardianStartInfo.ArgumentList.Add(requestPath);
 
         Process? guardian = null;
         try
         {
-            guardian = Process.Start(guardianStartInfo) ?? throw new InvalidOperationException(
-                "The game guardian process did not start.");
+            WriteRequest(requestPath, request);
+            cancellationToken.ThrowIfCancellationRequested();
+            guardian = _guardianStarter(requestPath);
             int guardianProcessId = guardian.Id;
             long started = Stopwatch.GetTimestamp();
-            while (Stopwatch.GetElapsedTime(started) < StartupTimeout)
+            bool cancellationSignalled = false;
+            while (Stopwatch.GetElapsedTime(started) < _startupTimeout)
             {
+                if (cancellationToken.IsCancellationRequested && !cancellationSignalled)
+                {
+                    cancellationSignalled = TrySignalCancellation(cancellationPath);
+                    if (cancellationSignalled)
+                    {
+                        _logger.Info(
+                            $"Cancellation requested while awaiting guardian handoff: profile={profileId}.");
+                    }
+                }
+
                 GameGuardianStatus? status = TryReadStatus(statusPath, token);
                 if (status is not null &&
                     string.Equals(status.State, "started", StringComparison.Ordinal) &&
@@ -458,16 +517,33 @@ internal sealed class GameProcessGuardianClient
                     throw CreateGuardianFailure(status.Error);
                 }
 
+                if (status is not null &&
+                    string.Equals(status.State, "cancelled", StringComparison.Ordinal))
+                {
+                    _logger.Info($"Game guardian confirmed cancellation before Java start: profile={profileId}.");
+                    throw new OperationCanceledException(
+                        "Game launch was cancelled before Java started.",
+                        cancellationToken);
+                }
+
                 if (guardian.HasExited)
                 {
                     throw CreateGuardianFailure(status?.Error ??
                         $"Guardian exited with code {guardian.ExitCode} before Minecraft started.");
                 }
 
-                await Task.Delay(PollInterval);
+                // Once guardian has been created, cancellation is resolved by its status:
+                // either Java was not started (cancelled) or the protected handoff completes.
+                await Task.Delay(_pollInterval);
             }
 
-            throw CreateGuardianFailure("Guardian startup confirmation timed out.");
+            throw CreateGuardianFailure(cancellationSignalled
+                ? "Guardian did not resolve the cancellation request before the startup timeout."
+                : "Guardian startup confirmation timed out.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (GameLaunchException)
         {
@@ -486,6 +562,30 @@ internal sealed class GameProcessGuardianClient
             guardian?.Dispose();
             TryDelete(requestPath);
         }
+    }
+
+    private static Process StartGuardianProcess(string requestPath)
+    {
+        string? launcherPath = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(launcherPath) || !File.Exists(launcherPath))
+        {
+            throw new GameLaunchException(
+                GameLaunchError.ProcessCreationFailed,
+                "Не удалось запустить защитный процесс Minecraft.",
+                "The current Launcher executable path is unavailable.");
+        }
+
+        ProcessStartInfo guardianStartInfo = new()
+        {
+            FileName = launcherPath,
+            WorkingDirectory = AppContext.BaseDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        guardianStartInfo.ArgumentList.Add(GameProcessGuardian.CommandLineSwitch);
+        guardianStartInfo.ArgumentList.Add(requestPath);
+        return Process.Start(guardianStartInfo) ?? throw new InvalidOperationException(
+            "The game guardian process did not start.");
     }
 
     private GameGuardianRequest CreateRequest(
@@ -524,6 +624,35 @@ internal sealed class GameProcessGuardianClient
         finally
         {
             TryDelete(temporaryPath);
+        }
+    }
+
+    private bool TrySignalCancellation(string cancellationPath)
+    {
+        try
+        {
+            ProfileLockFiles.EnsureNotReparsePoint(cancellationPath);
+            using FileStream marker = new(
+                cancellationPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.Read,
+                bufferSize: 1,
+                FileOptions.WriteThrough);
+            marker.WriteByte(1);
+            return true;
+        }
+        catch (IOException) when (File.Exists(cancellationPath))
+        {
+            ProfileLockFiles.EnsureNotReparsePoint(cancellationPath);
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            _logger.Error(
+                "Could not signal guardian cancellation; the protected handoff will continue.",
+                exception);
+            return false;
         }
     }
 
@@ -601,11 +730,10 @@ internal sealed class GuardedGameSession
 
     public long ProcessStartTimeUtcTicks { get; }
 
-    public async Task<int> WaitForExitAsync(CancellationToken cancellationToken)
+    public async Task<int> WaitForExitAsync()
     {
         while (true)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             GameGuardianStatus? status = ReadStatus();
             if (status is not null &&
                 string.Equals(status.State, "exited", StringComparison.Ordinal) &&
@@ -632,7 +760,7 @@ internal sealed class GuardedGameSession
                     $"Guardian PID {_guardianProcessId} exited before reporting game completion.");
             }
 
-            await Task.Delay(PollInterval, cancellationToken);
+            await Task.Delay(PollInterval);
         }
     }
 

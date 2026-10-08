@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Launcher.Core.Services;
 using Launcher.Infrastructure.Logging;
 using Launcher.Infrastructure.Persistence;
 
@@ -133,7 +134,7 @@ public sealed class FileProfileOperationLockTests
     }
 
     [Fact]
-    public void MalformedState_IsRemovedWithoutEscapingLockDirectory()
+    public void MalformedStateAfterGuardianHandleLoss_FailsClosedAndPreservesDiagnosticFile()
     {
         using TestDirectory directory = new();
         LauncherDataPaths paths = new(directory.Path);
@@ -142,13 +143,21 @@ public sealed class FileProfileOperationLockTests
         string statePath = activity.GetStatePath("main");
         File.WriteAllText(statePath, "{not-json");
 
-        Assert.True(profileLock.TryAcquire("main", out IDisposable? lease));
-        Assert.False(File.Exists(statePath));
-        lease!.Dispose();
+        PackSyncException exception = Assert.Throws<PackSyncException>(() =>
+            profileLock.TryAcquire("main", out _));
+
+        Assert.Equal(PackSyncError.ManagedStateCorrupt, exception.Error);
+        Assert.Contains("Закройте все окна Minecraft", exception.UserMessage, StringComparison.Ordinal);
+        Assert.Contains(statePath, exception.UserMessage, StringComparison.Ordinal);
+        Assert.True(File.Exists(statePath));
+
+        File.Delete(statePath);
+        Assert.True(profileLock.TryAcquire("main", out IDisposable? recoveredLease));
+        recoveredLease!.Dispose();
     }
 
     [Fact]
-    public void StructurallyInvalidState_IsRecoveredWithoutNullDereference()
+    public void StructurallyInvalidState_FailsClosedWithoutNullDereference()
     {
         using TestDirectory directory = new();
         LauncherDataPaths paths = new(directory.Path);
@@ -157,9 +166,43 @@ public sealed class FileProfileOperationLockTests
         string statePath = activity.GetStatePath("main");
         File.WriteAllText(statePath, "{\"SchemaVersion\":1,\"ProcessId\":123}");
 
-        Assert.True(profileLock.TryAcquire("main", out IDisposable? lease));
-        Assert.False(File.Exists(statePath));
-        lease!.Dispose();
+        PackSyncException exception = Assert.Throws<PackSyncException>(() =>
+            profileLock.TryAcquire("main", out _));
+
+        Assert.Equal(PackSyncError.ManagedStateCorrupt, exception.Error);
+        Assert.True(File.Exists(statePath));
+    }
+
+    [Fact]
+    public async Task MalformedStateWithLiveGameAndLostGuardianHandle_FailsClosed()
+    {
+        using TestDirectory directory = new();
+        LauncherDataPaths paths = new(directory.Path);
+        string instanceDirectory = paths.GetInstanceDirectory("main");
+        Directory.CreateDirectory(instanceDirectory);
+        Directory.CreateDirectory(paths.RuntimeDirectory);
+        string javaPath = Path.Combine(paths.RuntimeDirectory, "javaw.exe");
+        File.Copy(GetCommandInterpreter(), javaPath);
+        using Process game = Process.Start(new ProcessStartInfo
+        {
+            FileName = javaPath,
+            Arguments = "/d /c \"ping 127.0.0.1 -n 3 > nul\"",
+            WorkingDirectory = instanceDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        })!;
+        ProfileGameActivity activity = new(paths, new NullAppLogger());
+        string statePath = activity.GetStatePath("main");
+        File.WriteAllText(statePath, "{truncated");
+        FileProfileOperationLock profileLock = new(paths, new NullAppLogger());
+
+        PackSyncException exception = Assert.Throws<PackSyncException>(() =>
+            profileLock.TryAcquire("main", out _));
+
+        Assert.Equal(PackSyncError.ManagedStateCorrupt, exception.Error);
+        Assert.False(game.HasExited);
+        Assert.True(File.Exists(statePath));
+        await game.WaitForExitAsync();
     }
 
     [Fact]
@@ -217,4 +260,8 @@ public sealed class FileProfileOperationLockTests
             }
         }
     }
+
+    private static string GetCommandInterpreter() =>
+        Environment.GetEnvironmentVariable("ComSpec") ??
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
 }

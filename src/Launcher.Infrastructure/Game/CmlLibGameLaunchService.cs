@@ -179,7 +179,14 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
                 "Minecraft запущен",
                 processId);
 
-            int exitCode = await gameSession.WaitForExitAsync(cancellationToken);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                _logger.Info(
+                    "Game preparation cancellation arrived after Java started; " +
+                    "the protected Minecraft handoff will remain active.");
+            }
+
+            int exitCode = await gameSession.WaitForExitAsync();
             _logger.Info($"Minecraft process PID={processId} exited with code {exitCode}.");
             Report(
                 progress,
