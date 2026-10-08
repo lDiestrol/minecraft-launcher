@@ -8,4 +8,8 @@ public interface IPackSyncService
         GameProfile profile,
         IProgress<PackSyncProgress> progress,
         CancellationToken cancellationToken);
+
+    Task<ManagedPackRemovalResult> RemoveManagedFilesAsync(
+        string profileId,
+        CancellationToken cancellationToken);
 }

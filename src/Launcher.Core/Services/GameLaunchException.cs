@@ -5,6 +5,7 @@ public enum GameLaunchError
     InvalidProfile,
     UnsupportedLoader,
     AlreadyRunning,
+    SharedInstallBusy,
     InsufficientDiskSpace,
     NetworkUnavailable,
     MetadataUnavailable,

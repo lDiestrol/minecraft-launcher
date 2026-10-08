@@ -362,6 +362,130 @@ public sealed class PackSyncServiceTests
     }
 
     [Fact]
+    public async Task RemoveManagedFilesAsync_DeletesOnlyManagedFilesAndPreservesUserDataAndOtherProfiles()
+    {
+        using TestDirectory directory = new();
+        PackSyncService service = CreateService(
+            directory.Path,
+            HandlerForManifest(Manifest(
+                File("mods/official-a.jar", FileA),
+                File("config/official.cfg", FileB))));
+        await service.SyncAsync(Profile(), Progress(), CancellationToken.None);
+
+        string unmanagedMod = ManagedPath(directory, "mods/my-custom.jar");
+        string resourcePack = ManagedPath(directory, "resourcepacks/my-pack.zip");
+        string shaderPack = ManagedPath(directory, "shaderpacks/my-shader.zip");
+        string save = ManagedPath(directory, "saves/world/level.dat");
+        string screenshot = ManagedPath(directory, "screenshots/shot.png");
+        string options = ManagedPath(directory, "options.txt");
+        string otherProfile = Path.Combine(directory.Path, "instances", "other", "mods", "other.jar");
+        foreach (string file in new[] { unmanagedMod, resourcePack, shaderPack, save, screenshot, options, otherProfile })
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            await IOFile.WriteAllTextAsync(file, "user-owned");
+        }
+
+        ManagedPackRemovalResult result = await service.RemoveManagedFilesAsync(
+            "main",
+            CancellationToken.None);
+
+        Assert.Equal(2, result.DeletedFiles);
+        Assert.Equal(0, result.MissingFiles);
+        Assert.True(result.RemovedState);
+        Assert.False(IOFile.Exists(ManagedPath(directory, "mods/official-a.jar")));
+        Assert.False(IOFile.Exists(ManagedPath(directory, "config/official.cfg")));
+        Assert.False(IOFile.Exists(StatePath(directory)));
+        foreach (string file in new[] { unmanagedMod, resourcePack, shaderPack, save, screenshot, options, otherProfile })
+        {
+            Assert.Equal("user-owned", await IOFile.ReadAllTextAsync(file));
+        }
+    }
+
+    [Fact]
+    public async Task RemoveManagedFilesAsync_RejectsCorruptStateWithoutDeletingOutsideFile()
+    {
+        using TestDirectory directory = new();
+        string outside = Path.Combine(directory.Path, "outside.txt");
+        await IOFile.WriteAllTextAsync(outside, "keep");
+        Directory.CreateDirectory(Path.GetDirectoryName(StatePath(directory))!);
+        string corruptState = JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            profileId = "main",
+            packVersion = "1.0.0",
+            files = new[]
+            {
+                new { path = "../outside.txt", sha256 = Sha(FileA), size = FileA.Length },
+            },
+        });
+        await IOFile.WriteAllTextAsync(StatePath(directory), corruptState);
+        PackSyncService service = CreateService(
+            directory.Path,
+            HandlerForManifest(Manifest(File("mods/a.jar", FileA))));
+
+        PackSyncException exception = await Assert.ThrowsAsync<PackSyncException>(() =>
+            service.RemoveManagedFilesAsync("main", CancellationToken.None));
+
+        Assert.Equal(PackSyncError.ManagedStateCorrupt, exception.Error);
+        Assert.Equal("keep", await IOFile.ReadAllTextAsync(outside));
+        Assert.True(IOFile.Exists(StatePath(directory)));
+    }
+
+    [Fact]
+    public async Task SyncAsync_AfterManagedRemovalDownloadsPackAgain()
+    {
+        using TestDirectory directory = new();
+        string manifest = Manifest(
+            File("mods/official-a.jar", FileA),
+            File("config/official.cfg", FileB));
+        PackSyncService service = CreateService(directory.Path, HandlerForManifest(manifest));
+        await service.SyncAsync(Profile(), Progress(), CancellationToken.None);
+        await service.RemoveManagedFilesAsync("main", CancellationToken.None);
+        TestHandler secondHandler = HandlerForManifest(manifest);
+        PackSyncService second = CreateService(directory.Path, secondHandler);
+
+        PackSyncResult result = await second.SyncAsync(Profile(), Progress(), CancellationToken.None);
+
+        Assert.Equal(2, result.DownloadedFiles);
+        Assert.True(IOFile.Exists(ManagedPath(directory, "mods/official-a.jar")));
+        Assert.True(IOFile.Exists(ManagedPath(directory, "config/official.cfg")));
+        Assert.True(IOFile.Exists(StatePath(directory)));
+        Assert.Equal(3, secondHandler.RequestUris.Count);
+    }
+
+    [Fact]
+    public async Task RemoveManagedFilesAsync_RejectsReparsePointWithoutDeletingExternalTarget_WhenLinksAreSupported()
+    {
+        using TestDirectory directory = new();
+        PackSyncService service = CreateService(
+            directory.Path,
+            HandlerForManifest(Manifest(File("config/linked/managed.cfg", FileA))));
+        await service.SyncAsync(Profile(), Progress(), CancellationToken.None);
+        string linkedDirectory = ManagedPath(directory, "config/linked");
+        IOFile.Delete(Path.Combine(linkedDirectory, "managed.cfg"));
+        Directory.Delete(linkedDirectory);
+        string outside = Path.Combine(directory.Path, "outside");
+        Directory.CreateDirectory(outside);
+        string outsideFile = Path.Combine(outside, "managed.cfg");
+        await IOFile.WriteAllTextAsync(outsideFile, "external");
+        try
+        {
+            Directory.CreateSymbolicLink(linkedDirectory, outside);
+        }
+        catch (Exception linkException) when (linkException is UnauthorizedAccessException or IOException or PlatformNotSupportedException)
+        {
+            return;
+        }
+
+        PackSyncException exception = await Assert.ThrowsAsync<PackSyncException>(() =>
+            service.RemoveManagedFilesAsync("main", CancellationToken.None));
+
+        Assert.Equal(PackSyncError.UnsafeManagedPath, exception.Error);
+        Assert.Equal("external", await IOFile.ReadAllTextAsync(outsideFile));
+        Assert.True(IOFile.Exists(StatePath(directory)));
+    }
+
+    [Fact]
     public async Task SyncAsync_CancellationDuringDownloadLeavesNoTargetOrStateAndCleansStaging()
     {
         using TestDirectory directory = new();

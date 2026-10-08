@@ -1,3 +1,4 @@
+using Launcher.App.Services;
 using Launcher.App.ViewModels;
 using Launcher.Core;
 using Launcher.Core.Models;
@@ -232,7 +233,8 @@ public sealed class MainViewModelStartupTests
     {
         LauncherOperationCoordinator operationCoordinator = new(
             new UnusedPackSyncService(),
-            new UnusedGameLaunchService());
+            new UnusedGameLaunchService(),
+            new NoOpProfileOperationLock());
         LauncherUpdateCoordinator updateCoordinator = new(
             updateService ?? new StubUpdateService(),
             operationCoordinator);
@@ -242,6 +244,8 @@ public sealed class MainViewModelStartupTests
             new StubMemoryProvider(),
             operationCoordinator,
             updateCoordinator,
+            new StubProfileFileManager(),
+            new StubRemovalConfirmation(),
             logger ?? new StubLogger());
     }
 
@@ -346,11 +350,31 @@ public sealed class MainViewModelStartupTests
         }
     }
 
+    private sealed class NoOpProfileOperationLock : IProfileOperationLock
+    {
+        public bool TryAcquire(string profileId, out IDisposable? lease)
+        {
+            lease = new NoOpDisposable();
+            return true;
+        }
+    }
+
+    private sealed class NoOpDisposable : IDisposable
+    {
+        public void Dispose()
+        {
+        }
+    }
+
     private sealed class UnusedPackSyncService : IPackSyncService
     {
         public Task<PackSyncResult> SyncAsync(
             GameProfile profile,
             IProgress<PackSyncProgress> progress,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<ManagedPackRemovalResult> RemoveManagedFilesAsync(
+            string profileId,
             CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
@@ -360,6 +384,21 @@ public sealed class MainViewModelStartupTests
             GameLaunchRequest request,
             IProgress<GameLaunchProgress> progress,
             CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class StubProfileFileManager : IProfileFileManager
+    {
+        public string GetOrCreateDirectory(string profileId, ProfileDirectoryKind directoryKind) =>
+            System.IO.Path.Combine("test", profileId, directoryKind.ToString());
+
+        public void OpenDirectory(string profileId, ProfileDirectoryKind directoryKind)
+        {
+        }
+    }
+
+    private sealed class StubRemovalConfirmation : IManagedPackRemovalConfirmation
+    {
+        public bool Confirm(GameProfile profile) => false;
     }
 
     private sealed class StubLogger : IAppLogger

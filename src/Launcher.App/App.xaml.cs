@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Windows;
 using System.Windows.Threading;
+using Launcher.App.Services;
 using Launcher.App.ViewModels;
 using Launcher.Core;
 using Launcher.Core.Services;
@@ -59,9 +60,16 @@ public partial class App : Application
             };
             _gameHttpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"MinecraftLauncher/{LauncherVersion.Current}");
 
-            CmlLibGameLaunchService gameLaunchService = new(_gameHttpClient, paths, _logger);
+            CmlLibGameLaunchService gameLaunchService = new(
+                _gameHttpClient,
+                paths,
+                _logger,
+                new FileSharedInstallLock(paths, _logger));
             PackSyncService packSyncService = new(_packHttpClient, paths, _logger);
-            LauncherOperationCoordinator operationCoordinator = new(packSyncService, gameLaunchService);
+            LauncherOperationCoordinator operationCoordinator = new(
+                packSyncService,
+                gameLaunchService,
+                new FileProfileOperationLock(paths, _logger));
             VelopackLauncherUpdateService updateService = new(_logger);
             LauncherUpdateCoordinator updateCoordinator = new(updateService, operationCoordinator);
             string executionMode = updateService.IsPortable
@@ -77,6 +85,8 @@ public partial class App : Application
                 new WindowsSystemMemoryProvider(),
                 operationCoordinator,
                 updateCoordinator,
+                new ProfileFileManager(paths, _logger),
+                new ManagedPackRemovalConfirmation(),
                 _logger);
 
             await viewModel.InitializeAsync();

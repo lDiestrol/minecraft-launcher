@@ -6,17 +6,20 @@ public sealed class LauncherOperationCoordinator
 {
     private readonly IPackSyncService _packSyncService;
     private readonly IGameLaunchService _gameLaunchService;
-    private int _isActive;
+    private readonly IProfileOperationLock _profileOperationLock;
+    private int _activeOperations;
 
     public LauncherOperationCoordinator(
         IPackSyncService packSyncService,
-        IGameLaunchService gameLaunchService)
+        IGameLaunchService gameLaunchService,
+        IProfileOperationLock profileOperationLock)
     {
         _packSyncService = packSyncService;
         _gameLaunchService = gameLaunchService;
+        _profileOperationLock = profileOperationLock;
     }
 
-    public bool IsActive => Volatile.Read(ref _isActive) != 0;
+    public bool IsActive => Volatile.Read(ref _activeOperations) != 0;
 
     public async Task<(PackSyncResult Pack, GameLaunchResult Game)> PlayAsync(
         GameProfile profile,
@@ -25,7 +28,7 @@ public sealed class LauncherOperationCoordinator
         IProgress<GameLaunchProgress> gameProgress,
         CancellationToken cancellationToken)
     {
-        Enter();
+        IDisposable operation = Enter(profile.Id);
         try
         {
             PackSyncResult packResult = await _packSyncService.SyncAsync(
@@ -40,7 +43,7 @@ public sealed class LauncherOperationCoordinator
         }
         finally
         {
-            Exit();
+            Exit(operation);
         }
     }
 
@@ -49,27 +52,56 @@ public sealed class LauncherOperationCoordinator
         IProgress<PackSyncProgress> progress,
         CancellationToken cancellationToken)
     {
-        Enter();
+        IDisposable operation = Enter(profile.Id);
         try
         {
             return await _packSyncService.SyncAsync(profile, progress, cancellationToken);
         }
         finally
         {
-            Exit();
+            Exit(operation);
         }
     }
 
-    private void Enter()
+    public async Task<ManagedPackRemovalResult> RemoveManagedFilesAsync(
+        GameProfile profile,
+        CancellationToken cancellationToken)
     {
-        if (Interlocked.CompareExchange(ref _isActive, 1, 0) != 0)
+        IDisposable operation = Enter(profile.Id);
+        try
+        {
+            return await _packSyncService.RemoveManagedFilesAsync(profile.Id, cancellationToken);
+        }
+        finally
+        {
+            Exit(operation);
+        }
+    }
+
+    private IDisposable Enter(string profileId)
+    {
+        if (!_profileOperationLock.TryAcquire(profileId, out IDisposable? lease) || lease is null)
         {
             throw new PackSyncException(
                 PackSyncError.AlreadyRunning,
-                "Другая операция Launcher уже выполняется.",
-                "A play or repair operation is already active.");
+                "Эта игровая сборка уже используется другим окном Launcher или запущенным Minecraft. " +
+                "Закройте игру или дождитесь завершения операции.",
+                $"Profile operation lock is already held for '{profileId}'.");
         }
+
+        Interlocked.Increment(ref _activeOperations);
+        return lease;
     }
 
-    private void Exit() => Volatile.Write(ref _isActive, 0);
+    private void Exit(IDisposable operation)
+    {
+        try
+        {
+            operation.Dispose();
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _activeOperations);
+        }
+    }
 }
