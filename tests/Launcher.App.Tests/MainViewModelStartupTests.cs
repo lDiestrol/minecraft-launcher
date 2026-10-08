@@ -233,7 +233,8 @@ public sealed class MainViewModelStartupTests
     {
         LauncherOperationCoordinator operationCoordinator = new(
             new UnusedPackSyncService(),
-            new UnusedGameLaunchService());
+            new UnusedGameLaunchService(),
+            new NoOpProfileOperationLock());
         LauncherUpdateCoordinator updateCoordinator = new(
             updateService ?? new StubUpdateService(),
             operationCoordinator);
@@ -345,6 +346,22 @@ public sealed class MainViewModelStartupTests
             CancellationToken cancellationToken) => Task.CompletedTask;
 
         public void ApplyUpdateAndRestart(LauncherUpdateInfo update)
+        {
+        }
+    }
+
+    private sealed class NoOpProfileOperationLock : IProfileOperationLock
+    {
+        public bool TryAcquire(string profileId, out IDisposable? lease)
+        {
+            lease = new NoOpDisposable();
+            return true;
+        }
+    }
+
+    private sealed class NoOpDisposable : IDisposable
+    {
+        public void Dispose()
         {
         }
     }

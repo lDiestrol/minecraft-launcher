@@ -239,7 +239,8 @@ public sealed class LauncherUpdateTests
         Task<PackSyncResult>? packResult = null) =>
         new(
             new StubPackSyncService(packResult ?? Task.FromResult(PackResult())),
-            new StubGameLaunchService(gameResult));
+            new StubGameLaunchService(gameResult),
+            new NoOpProfileOperationLock());
 
     private static PackSyncResult PackResult() => new(0, 0, 0, 0, 0, "1.0.0");
 
@@ -309,6 +310,22 @@ public sealed class LauncherUpdateTests
             progress?.Invoke(50);
             progress?.Invoke(100);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class NoOpProfileOperationLock : IProfileOperationLock
+    {
+        public bool TryAcquire(string profileId, out IDisposable? lease)
+        {
+            lease = new NoOpDisposable();
+            return true;
+        }
+    }
+
+    private sealed class NoOpDisposable : IDisposable
+    {
+        public void Dispose()
+        {
         }
     }
 

@@ -62,7 +62,10 @@ public partial class App : Application
 
             CmlLibGameLaunchService gameLaunchService = new(_gameHttpClient, paths, _logger);
             PackSyncService packSyncService = new(_packHttpClient, paths, _logger);
-            LauncherOperationCoordinator operationCoordinator = new(packSyncService, gameLaunchService);
+            LauncherOperationCoordinator operationCoordinator = new(
+                packSyncService,
+                gameLaunchService,
+                new FileProfileOperationLock(paths, _logger));
             VelopackLauncherUpdateService updateService = new(_logger);
             LauncherUpdateCoordinator updateCoordinator = new(updateService, operationCoordinator);
             string executionMode = updateService.IsPortable
