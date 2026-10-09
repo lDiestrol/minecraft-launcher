@@ -19,7 +19,7 @@ Application install root Velopack и постоянный data root различ
 ## Локальная упаковка
 
 ```powershell
-./scripts/build-release.ps1 -Version 0.5.0 -Channel dev
+./scripts/build-release.ps1 -Version 0.6.0 -Channel stable
 ```
 
 Скрипт проверяет SemVer и allowlist канала до тяжёлой сборки, восстанавливает локальные tools/packages, публикует self-contained приложение, сверяет `ProductVersion` основного EXE, передаёт общую product icon в pinned `vpk pack`, проверяет обязательные artifacts и создаёт lowercase SHA-256 строки в `SHA256SUMS.txt`.
