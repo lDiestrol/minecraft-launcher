@@ -92,8 +92,7 @@ foreach ($pattern in $requiredPatterns) {
 }
 
 $optionalIndexFiles = @(
-    "assets.$Channel.json",
-    "RELEASES-$Channel"
+    "assets.$Channel.json"
 )
 foreach ($name in $optionalIndexFiles) {
     if (Test-Path -LiteralPath (Join-Path $releaseDir $name) -PathType Leaf) {

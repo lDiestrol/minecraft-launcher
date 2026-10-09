@@ -49,6 +49,7 @@ try {
 
     $hashLines = Get-Content -LiteralPath (Join-Path $tempRoot 'SHA256SUMS.txt')
     Assert-True (-not ($hashLines -match '0\.5\.0')) 'Hash manifest must not publish the historical full package.'
+    Assert-True (-not ($hashLines -match '^.+  RELEASES-stable$')) 'Hash manifest must not publish the legacy index with historical package references.'
     Assert-True (@($hashLines -match '0\.6\.0-stable-full\.nupkg').Count -eq 1) 'Current full package is missing from hash manifest.'
     Assert-True (@($hashLines -match '0\.6\.0-stable-delta\.nupkg').Count -eq 1) 'Current delta package is missing from hash manifest.'
 
