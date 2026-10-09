@@ -24,6 +24,8 @@ Application install root Velopack и постоянный data root различ
 
 Скрипт проверяет SemVer и allowlist канала до тяжёлой сборки, восстанавливает локальные tools/packages, публикует self-contained приложение, сверяет `ProductVersion` основного EXE, передаёт общую product icon в pinned `vpk pack`, проверяет обязательные artifacts и создаёт lowercase SHA-256 строки в `SHA256SUMS.txt`.
 
+Перед публикацией скрипт оставляет в `releases.<channel>.json` только Full/Delta текущей версии. Это важно для `GithubSource`: каждая запись feed связывается с тем GitHub Release, в котором находится индекс, поэтому исторические пакеты не должны повторно указываться из нового Release. Проверенный предыдущий full package и legacy `RELEASES-<channel>` могут оставаться рядом локально для построения delta, но не включаются в publish-only `SHA256SUMS.txt`.
+
 Результат находится в `artifacts/releases/<channel>`. Временный publish — `artifacts/publish/<version>`. Скрипт очищает только эти dedicated output paths. Для локальной последовательной упаковки A → B с delta используется `-KeepPreviousReleases`; vpk сам решает, возможно ли создать delta.
 
 Test-only `tools/Launcher.UpdateE2EHarness` позволяет проверить installed A → B через локальный feed. Он не входит в solution packaging и production installer, не принимает remote URL из UI/server config и предназначен только для ручного E2E.
