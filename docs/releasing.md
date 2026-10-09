@@ -34,9 +34,11 @@ Test-only `tools/Launcher.UpdateE2EHarness` позволяет проверит�
 
 `.github/workflows/package.yml` запускается только вручную (`workflow_dispatch`) с inputs `version` и `channel`. Windows job выполняет restore/build/test/format, затем тот же release script, проверяет hash manifest и загружает каталог Velopack как Actions artifact. Permissions ограничены `contents: read`; workflow не создаёт tag или GitHub Release.
 
-## Будущий официальный release
+## Официальные releases
 
-После отдельного решения владельца:
+Стабильная v0.6.0 опубликована в [GitHub Releases](https://github.com/lDiestrol/minecraft-launcher/releases/tag/v0.6.0). Её installed update path с v0.5.0 подтверждён пользователем.
+
+Каждый следующий release выполняется только после отдельного решения владельца:
 
 ```text
 validated commit → reviewed tag → package → GitHub Release
@@ -48,4 +50,4 @@ Production update source уже закреплён за публичным `lDie
 
 Для rollback публикуется новая, более высокая исправленная версия в том же channel. Не заменяйте содержимое уже опубликованной версии: feed, package hashes и пользовательские проверки должны оставаться воспроизводимыми. Downgrade не включён.
 
-RC следует получать только из официального GitHub repository/release source. SHA-256 подтверждает целостность полученного файла, но не заменяет Authenticode identity. Коммерческая подпись может быть добавлена позже отдельным решением без изменения PackId.
+Стабильные и предварительные сборки следует получать только из официального GitHub repository/release source. SHA-256 подтверждает целостность полученного файла, но не заменяет Authenticode identity. Коммерческая подпись может быть добавлена позже отдельным решением без изменения PackId.

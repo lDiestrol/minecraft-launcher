@@ -1,4 +1,4 @@
-# Запуск игры в MVP-2
+# Запуск игры в Launcher v0.6.0
 
 ## Поток запуска
 
@@ -28,7 +28,7 @@ UI получает реальные file/task и byte-progress события C
 
 - Поддерживается только `loader.type = fabric`.
 - Сессия локальная offline; Microsoft/Xbox authentication и обход online-mode не реализованы.
-- `manifestUrl` не загружается, mods/config не синхронизируются, Repair отсутствует до MVP-3.
+- Pack Manifest v1 управляет только `mods/` и `config/`; Repair выполняет полный hash/sync cycle без запуска Minecraft.
 - Серверный профиль не может задавать Java path, JVM arguments, environment variables, локальные пути или executable URL.
 
 ## CmlLib.Core

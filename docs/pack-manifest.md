@@ -87,4 +87,4 @@ Manifest не может задавать executable, Java path, JVM arguments, 
 /launcher/packs/main/files/config/...
 ```
 
-Pack HTTP client не хранит и не отправляет cookies. Credentials, signed manifests, archives и deployment backend в MVP-3 не поддерживаются.
+Pack HTTP client не хранит и не отправляет cookies. Credentials, signed manifests, archives и deployment backend в Launcher v0.6.0 не поддерживаются.

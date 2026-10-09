@@ -1,6 +1,6 @@
 # Server Protocol v1
 
-Этот документ задаёт статический HTTP-контракт между Launcher MVP-3 и nginx/static hosting/server implementation.
+Этот документ задаёт статический HTTP-контракт между Launcher v0.6.0 и static hosting/server implementation.
 
 ## Входной URL и нормализация
 
@@ -73,7 +73,7 @@ Launcher принимает:
 
 `profiles` должен содержать хотя бы один полностью корректный элемент. Для каждого элемента обязательны непустые `id`, `name`, `minecraftVersion`, `loader.type`, `loader.version`, `packVersion`, `manifestUrl`, `serverAddress` и `serverPort` в диапазоне 1–65535. Profile IDs уникальны без учёта регистра.
 
-`id` содержит от 1 до 64 ASCII-букв, цифр, `-` или `_`; Windows device names (`CON`, `NUL`, `COM1` и аналогичные) запрещены. `minecraftVersion` и `loader.version` содержат не более 64 безопасных символов версии и не допускают path separators. В MVP-3 исполняется только `loader.type = "fabric"`; версия loader используется точно как передана, без автоматической замены на `latest`.
+`id` содержит от 1 до 64 ASCII-букв, цифр, `-` или `_`; Windows device names (`CON`, `NUL`, `COM1` и аналогичные) запрещены. `minecraftVersion` и `loader.version` содержат не более 64 безопасных символов версии и не допускают path separators. В Launcher v0.6.0 исполняется только `loader.type = "fabric"`; версия loader используется точно как передана, без автоматической замены на `latest`.
 
 Server Protocol v1 разбирается строго: неизвестные поля отклоняются. В частности, профиль не может передать `executable`, Java path, JVM arguments, environment variables или локальную игровую директорию.
 
