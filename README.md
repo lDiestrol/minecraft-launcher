@@ -2,7 +2,7 @@
 
 Открытый Windows-лаунчер для Minecraft-серверов с конфигурацией по URL. Пользователь указывает адрес сервера, лаунчер получает `bootstrap.json` и список игровых сборок, после чего сохраняет ник, выбранный профиль и объём RAM.
 
-Проект готовится к выпуску **stable-версии 0.6.0**. Перед запуском Minecraft Launcher получает Pack Manifest v1, проверяет SHA-256 и синхронизирует Launcher-managed `mods`/`config`. Затем CmlLib.Core подготавливает Minecraft, managed Java и точную версию Fabric и запускает клиент с локальным offline nickname.
+Официальная **stable-версия 0.6.0** опубликована в [GitHub Releases](https://github.com/lDiestrol/minecraft-launcher/releases/tag/v0.6.0). Перед запуском Minecraft Launcher получает Pack Manifest v1, проверяет SHA-256 и синхронизирует Launcher-managed `mods`/`config`. Затем CmlLib.Core подготавливает Minecraft, managed Java и точную версию Fabric и запускает клиент с локальным offline nickname.
 
 ## Требования
 
@@ -21,6 +21,16 @@ dotnet run --project src/Launcher.App/Launcher.App.csproj
 
 Проект совместим с обычным workflow в VS Code и не требует Visual Studio для командной сборки.
 
+## Состояние проекта и планы
+
+- [Текущее состояние проекта](docs/PROJECT_STATUS.md)
+- [Roadmap версий и приоритетов](docs/ROADMAP.md)
+- [План серверного Pack Manager](docs/PACK_MANAGER_PLAN.md)
+- [Краткий контекст для продолжения другим ИИ](docs/AI_HANDOFF.md)
+
+Новые участники и AI-сессии должны начать с `PROJECT_STATUS.md` и `AI_HANDOFF.md`,
+а затем сверить изложенные там факты с актуальным Git и внешними production-данными.
+
 ## Installation
 
 Обычному пользователю нужен только `lDiestrol.MinecraftLauncher-<version>-Setup.exe` из официального GitHub repository/release source проекта. Setup выполняет per-user установку Windows x64 и не требует отдельно установленного .NET Runtime или прав администратора. Установленное приложение и постоянные данные разделены:
@@ -28,11 +38,11 @@ dotnet run --project src/Launcher.App/Launcher.App.csproj
 - Velopack application: `%LOCALAPPDATA%\lDiestrol.MinecraftLauncher`;
 - settings, логи и Minecraft: `%LOCALAPPDATA%\MinecraftLauncher`.
 
-Удаление или обновление приложения не предназначено для удаления второго каталога. Portable ZIP можно распаковать и запускать без установки. Velopack распознаёт portable mode; отдельный portable A→B apply E2E в рамках этого RC не выполнялся, поэтому основным проверенным update path остаётся версия из Setup.exe.
+Удаление или обновление приложения не предназначено для удаления второго каталога. Portable ZIP можно распаковать и запускать без установки. Velopack распознаёт portable mode; отдельный portable A→B apply E2E для v0.6.0 не выполнялся, поэтому основным проверенным update path остаётся версия из Setup.exe.
 
 ## SmartScreen
 
-Текущий RC не подписан Authenticode. Windows может показать `Unknown Publisher` или SmartScreen. Для Setup.exe, полученного из официального источника проекта, выберите «Подробнее» → «Выполнить в любом случае». Не отключайте SmartScreen глобально. `SHA256SUMS.txt` позволяет проверить целостность конкретного файла, но не заменяет доверие Authenticode.
+Текущий стабильный релиз не подписан Authenticode. Windows может показать `Unknown Publisher` или SmartScreen. Для Setup.exe, полученного из официального источника проекта, выберите «Подробнее» → «Выполнить в любом случае». Не отключайте SmartScreen глобально. `SHA256SUMS.txt` позволяет проверить целостность конкретного файла, но не заменяет доверие Authenticode.
 
 ## Updates
 
@@ -123,7 +133,7 @@ https://example.org/launcher/bootstrap.json
 
 ## Текущие ограничения
 
-MVP-4 поддерживает только Windows x64, Fabric, offline nickname и managed-файлы в `mods`/`config`. RC unsigned, поэтому возможен SmartScreen warning. Намеренно отсутствуют Microsoft login, Forge/NeoForge/Quilt, resourcepacks/shaderpacks, telemetry, backend/admin panel и коммерческая code signing. Официальный production GitHub Release на этом этапе не опубликован.
+v0.6.0 поддерживает Windows x64, Fabric, offline nickname и управление pack-файлами только в `mods`/`config`. Папки пользовательских resourcepacks/shaderpacks можно открыть из UI, но Launcher не управляет их содержимым как частью Pack Manifest. Намеренно отсутствуют Microsoft login, Forge/NeoForge/Quilt, telemetry и backend/admin panel. Сборка unsigned, поэтому возможен SmartScreen warning.
 
 ## Публичный репозиторий и secrets policy
 
