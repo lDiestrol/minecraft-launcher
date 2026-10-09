@@ -35,3 +35,7 @@ jobs:
 
       - name: Verify formatting
         run: dotnet format MinecraftLauncher.sln --verify-no-changes --no-restore
+
+      - name: Test release feed finalization
+        shell: pwsh
+        run: ./tests/ReleaseFeedScriptTests.ps1

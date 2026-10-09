@@ -111,19 +111,14 @@ try {
         throw 'Velopack did not create Setup, full package, portable ZIP, and release index.'
     }
 
-    $hashFile = Join-Path $releaseDir 'SHA256SUMS.txt'
-    $hashLines = Get-ChildItem -LiteralPath $releaseDir -File |
-        Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
-        Sort-Object Name |
-        ForEach-Object {
-            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $($_.Name)"
-        }
-    [System.IO.File]::WriteAllLines($hashFile, $hashLines, [System.Text.UTF8Encoding]::new($false))
+    $finalizeFeedScript = Join-Path $repoRoot 'scripts\finalize-github-release-feed.ps1'
+    & $finalizeFeedScript -ReleaseDirectory $releaseDir -Version $Version -Channel $Channel
 
+    $hashFile = Join-Path $releaseDir 'SHA256SUMS.txt'
     Write-Host "Release created: version=$Version channel=$Channel"
-    Get-ChildItem -LiteralPath $releaseDir -File |
-        Sort-Object Name |
+    Get-Content -LiteralPath $hashFile |
+        ForEach-Object { $_ -replace '^[0-9a-f]{64}  ', '' } |
+        ForEach-Object { Get-Item -LiteralPath (Join-Path $releaseDir $_) } |
         Select-Object Name, Length, FullName |
         Format-Table -AutoSize
 }
