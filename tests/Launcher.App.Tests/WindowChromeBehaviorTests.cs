@@ -59,10 +59,9 @@ public sealed class WindowChromeBehaviorTests
             Assert.True(minimizeButton.Focusable);
             Assert.True(maximizeButton.Focusable);
             Assert.True(closeButton.Focusable);
-            Assert.Equal(46, minimizeButton.ActualWidth);
-            Assert.Equal(41, minimizeButton.ActualHeight);
-            Assert.Equal(46, closeButton.ActualWidth);
-            Assert.Equal(41, closeButton.ActualHeight);
+            AssertCaptionButtonSize(minimizeButton);
+            AssertCaptionButtonSize(maximizeButton);
+            AssertCaptionButtonSize(closeButton);
 
             InvokeClick(minimizeButton);
             Assert.Equal(WindowState.Minimized, window.WindowState);
@@ -81,6 +80,22 @@ public sealed class WindowChromeBehaviorTests
 
             application.Shutdown();
         });
+    }
+
+    private static void AssertCaptionButtonSize(Button button)
+    {
+        Assert.Equal(46, button.Width);
+        Assert.Equal(41, button.Height);
+        Assert.True(button.UseLayoutRounding);
+
+        DpiScale dpi = VisualTreeHelper.GetDpi(button);
+        // WPF rounds physical pixels using midpoint-to-even; layout remains in DIP.
+        double expectedWidth = Math.Round(46 * dpi.DpiScaleX, MidpointRounding.ToEven) / dpi.DpiScaleX;
+        double expectedHeight = Math.Round(41 * dpi.DpiScaleY, MidpointRounding.ToEven) / dpi.DpiScaleY;
+
+        // Allow only one representable double step, not a pixel-sized layout tolerance.
+        Assert.Equal(expectedWidth, button.ActualWidth, tolerance: Math.BitIncrement(expectedWidth) - expectedWidth);
+        Assert.Equal(expectedHeight, button.ActualHeight, tolerance: Math.BitIncrement(expectedHeight) - expectedHeight);
     }
 
     private static void AssertBrush(Application application, string key, string expected)

@@ -4,7 +4,11 @@
 > Стабильная ветка: `main`; verified commit после `git fetch origin`:
 > `bd98ecd721298981508d54466d11089c1647ab4f`.
 > Стабильная версия — **v0.6.0**. Следующая программная разработка — **v0.6.1**.
-> Последняя локальная проверка: **251/252 тестов проходят**, один WPF-тест падает.
+> Исторический полный прогон после исправления WPF/DPI-теста: **252/252 проходят**;
+> в текущей документационной задаче тесты повторно не запускались.
+> Публичный снимок на 10.10.2026: [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8)
+> объединён в `feat/v0.6.1`; [Draft PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9)
+> открыт из `fix/v061-windowchrome-dpi`, опубликованный head — `e7aafe74d8eb978c346bb033b2ce57d49abdf05a`.
 
 ## 1. Назначение и источник состояния
 
@@ -42,7 +46,7 @@ Minecraft Launcher — публичный Windows x64 клиент на .NET 10 
 | --- | --- |
 | Origin | `https://github.com/lDiestrol/minecraft-launcher.git` |
 | Стабильная ветка | `main`, verified `origin/main` — `bd98ecd721298981508d54466d11089c1647ab4f`; рабочий HEAD документации отслеживается отдельно |
-| Интеграционная ветка | `feat/v0.6.1`, создана от `bd98ecd721298981508d54466d11089c1647ab4f`, подтверждена fetch |
+| Интеграционная ветка | `feat/v0.6.1`, verified `origin/feat/v0.6.1` — `c31c98293cec665c5bffa7022263a4ffc7661bbc`; включает объединённый [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8) |
 | Verified main | [bd98ecd721298981508d54466d11089c1647ab4f](https://github.com/lDiestrol/minecraft-launcher/commit/bd98ecd721298981508d54466d11089c1647ab4f) |
 | Стабильный release | [v0.6.0](https://github.com/lDiestrol/minecraft-launcher/releases/tag/v0.6.0), GitHub API: `draft=false`, `prerelease=false`, опубликован 09.10.2026 |
 | Release tag/target | [1ae3ae74b1b70d92031fe8706f80f85e506efd56](https://github.com/lDiestrol/minecraft-launcher/commit/1ae3ae74b1b70d92031fe8706f80f85e506efd56) |
@@ -54,18 +58,18 @@ Tag релиза и verified main различаются: после релиз�
 документация через PR #7. `git diff v0.6.0..origin/main` показывает только документацию.
 Названия старых feature/release-веток не задают актуальную основу разработки.
 
-На 10.10.2026 GitHub API и fetch показывают ветки `main`, `codex/project-status-roadmap`,
-`feat/first-release`, `feat/mvp-shell`, `feat/mvp2-game-launch`, `feat/ui-refresh`,
-`fix/github-release-feed-index`, `release/v0.6.0`; повторный fetch подтвердил новую
-`feat/v0.6.1` от `bd98ecd`. Ветки v0.6.2 в проверенном списке нет; это не доказывает
-отсутствие работы вне публичного Git. Ветка документационной задачи —
-`docs/unified-agent-state`, от той же verified основы, PR направляется в `feat/v0.6.1`.
+Проверенный снимок Git/GitHub на 10.10.2026: `origin/main` — `bd98ecd`,
+`origin/feat/v0.6.1` — `c31c982`, `origin/fix/v061-windowchrome-dpi` — `e7aafe7`,
+`origin/release/v0.6.0` — `e426ecb`. [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8)
+объединён в `feat/v0.6.1` с merge commit `c31c982`; [PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9)
+открыт как Draft из `fix/v061-windowchrome-dpi` в `feat/v0.6.1` и не объединён.
+Статусы PR и HEAD изменяемы; перед следующей работой их следует проверить заново.
 
 Согласованная 10.10.2026 Git-стратегия: main сохраняет стабильную v0.6.0;
 промежуточные feature/docs/fix PR объединяются в `feat/v0.6.1` только в рамках
 разрешённой задачи. Полностью завершённая v0.6.1 позже переносится в main одним
-Squash & Merge после явного согласования владельца. Этот документационный PR
-публикуется как Draft для независимого review, без merge, tags или Release.
+Squash & Merge после явного согласования владельца. Draft PR #9 остаётся отдельным
+исправлением WPF/DPI-теста и документации; merge, tags и Release не выполнялись.
 
 ## 3. Версии и отдельные направления
 
@@ -80,7 +84,7 @@ Squash & Merge после явного согласования владельц
 | v0.6.1 | Согласован, следующий программный этап | Серверный/одиночный запуск одного профиля, точный RAM, небольшие UX-исправления; сейчас не реализован |
 | v0.6.2 | Согласован, запланирован после v0.6.1 | Размер данных, безопасное удаление установки профиля, отдельные shared-data операции |
 | Серверный Pack Manager | Отдельный согласованный трек проектирования | Publisher, версионирование клиентских pack, планируемый LXC/NGINX; реализация и deployment не подтверждены |
-| Единая документация агентов | Подготовлена для Draft review | Владелец разрешил один документационный commit/push и Draft PR в `feat/v0.6.1`; merge/release не разрешены |
+| Единая документация агентов | Объединена в `feat/v0.6.1` | [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8) объединён 10.10.2026; merge commit `c31c98293cec665c5bffa7022263a4ffc7661bbc` |
 
 ## 4. Что уже работает в v0.6.0
 
@@ -182,8 +186,8 @@ keyboard/focus/DPI остаются удобными. Предложение: о
 
 Предложение для review: Core enum/value object `Server`/`Singleplayer`; UI не должен
 управлять CmlLib flags напрямую. Названия типов и разбиение PR пока не зафиксированы.
-Известный WPF-сбой ниже требует отдельного рассмотрения до зелёного release gate;
-он не разрешает произвольное расширение функционального scope v0.6.1.
+Результаты диагностики и локального исправления WPF-теста приведены ниже;
+они не разрешают произвольное расширение функционального scope v0.6.1.
 
 ## 6. План v0.6.2 — согласованный отдельный этап
 
@@ -262,8 +266,8 @@ retention и read-only systemd timer. Все инфраструктурные о
 
 | Запись | Факт и действие |
 | --- | --- |
-| WPF test failure, 10.10.2026 | `CaptionButtonsExecuteTheirWindowActions`, assertion line 63: ожидается `ActualHeight=41`, реально `41.333333333333336`; повторён внутри/вне песочницы. DPI/layout rounding — гипотеза, причина не доказана. Код не исправлялся |
-| Исторические 252 passed | Записаны для релиза 09.10; актуальные локальные 251 passed/1 failed их не заменяют задним числом и не доказывают новый кодовый регресс |
+| WPF test failure, 10.10.2026 — исправление опубликовано | До исправления `CaptionButtonsExecuteTheirWindowActions`, assertion line 63: ожидалось `ActualHeight=41`, реально `41.333333333333336`. Диагностика на актуальной `feat/v0.6.1` подтвердила DPI 150% и унаследованный `UseLayoutRounding=True`: 41 DIP округляется до 62 физических пикселей, затем 62 / 1.5 DIP. DPI-aware исправление опубликовано в [Draft PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9); действия кнопок сохранены, UI не менялся, предыдущий полный прогон — 252/252 |
+| Исторические 252 passed | Записаны для релиза 09.10; диагностические 251 passed/1 failed на ноутбуке и последующие 252 passed после исправления теста — отдельные результаты, не переписывающие историю релиза |
 | Atomic publish терминология | File.Replace/Move атомарны пофайлово; нет journal/backup/rollback всей pack-транзакции. I/O failure или crash в apply могут оставить частично обновлённый pack и старый state. Нельзя обещать полный crash rollback |
 | Длина архитектурных классов | MainViewModel/PackSyncService совмещают много обязанностей; возможный рефакторинг — технический долг, не согласованная новая функция v0.6.1 |
 | Startup update сообщение | Начальная фраза ViewModel о ручной проверке расходится с автоматическим startup check; записано для UX review |
@@ -271,6 +275,26 @@ retention и read-only systemd timer. Все инфраструктурные о
 | Старые документы | Разные baseline SHA и путь ПК в status/handoff; сохранены как исторические снимки, текущие правила/планы перенесены сюда |
 | Исправления документации | Уточнены code-behind, профильно scoped coordinator/guardian, pack sync в launch flow, пофайловая atomicity и фактическое имя Setup asset |
 | Release notes v0.6.0 | Фраза «после публикации» — исторический текст релиза; актуальная публикация подтверждена API. Notes сохранены без переписывания истории |
+
+Историческая диагностика WindowChrome (10.10.2026): исходное рабочее дерево было чистым;
+создана локальная `fix/v061-windowchrome-dpi` от актуальной `origin/feat/v0.6.1`.
+У всех трёх кнопок заданы `Width=46`, `Height=41`; измерены `DpiScaleX/Y=1.5`,
+`ActualWidth=46`, `ActualHeight=41.333333333333336`. На отдельном экземпляре окна
+переключение layout rounding только в памяти дало последовательность высот
+41.333333333333336 → 41 → 41.333333333333336. Hit testing в центре кнопок,
+enabled/focusable/chrome flags и действия minimize/maximize/restore/close проверены.
+Изолированный WPF layout с DPI 100/125/150/175/200% подтвердил формулу
+`Math.Round(size * dpiScale) / dpiScale` для обеих осей; она соответствует
+[исходникам WPF 10.0.12](https://github.com/dotnet/wpf/blob/v10.0.12/src/Microsoft.DotNet.Wpf/src/PresentationCore/System/Windows/UIElement.cs).
+После согласования изменён только `WindowChromeBehaviorTests.cs`: новый helper для
+всех трёх кнопок строго проверяет заданные 46×41 DIP и включённый layout rounding;
+ожидаемые ActualWidth/ActualHeight рассчитывает по DPI конкретной кнопки и оси.
+`MidpointRounding.ToEven` сверено с загруженной WPF 10.0.12: 61.5 → 62,
+57.5 → 58 и 80.5 → 80 физических пикселей. Допуск сравнения — один ULP ожидаемого
+double (`Math.BitIncrement(expected) - expected`), здесь около 7.1e-15 DIP;
+это погрешность представления, а не допуск в физический пиксель.
+WindowChrome, IsEnabled, Focusable и действия кнопок сохранены. UI не менялся.
+Результаты того локального этапа и ограничения multi-DPI проверки — в разделе 12.
 
 ## 10. Нерешённые вопросы
 
@@ -288,7 +312,7 @@ LXC OS/quota/storage/network/firewall/service credentials; VM lifecycle и healt
 client/server/common mod mapping; authoritative pack version, publisher/reviewer roles,
 storage atomic primitives и требуемый audit export. Детали остаются в отдельном плане.
 
-Прочие вопросы: причина WPF failure на этом ноутбуке; portable update UX/E2E;
+Прочие вопросы: решение по merge Draft PR #9; portable update UX/E2E;
 code signing и срок; частые реальные диагностические ошибки блокировок.
 Необходимость ADR и машинной release checklist — предложения, не scope v0.6.1.
 
@@ -303,8 +327,11 @@ code signing и срок; частые реальные диагностичес
 | 09.10.2026 | Status/roadmap/server plan в main через [PR #7](https://github.com/lDiestrol/minecraft-launcher/pull/7), [bd98ecd](https://github.com/lDiestrol/minecraft-launcher/commit/bd98ecd721298981508d54466d11089c1647ab4f) |
 | 10.10.2026 | Ноутбук: чистая `feat/mvp2-game-launch` (`e77be5f`) → fetch → main `bd98ecd`; проверены публичный release и ветки, restore/build/test/format/feed |
 | 10.10.2026 | Владелец разрешил документационную ветку несмотря на 1 WPF failure; создана `docs/unified-agent-state`, добавлены AGENTS/CLAUDE/Ledger, исправлены ссылки и описания. На первоначальном этапе это был локальный черновик без commit и PR; удаления не выполнялись |
-| 10.10.2026 | Затем согласована интеграция через `feat/v0.6.1`; fetch подтвердил ветку от `bd98ecd`. Создан документационный commit, ветка `docs/unified-agent-state` отправлена в origin и опубликован [Draft PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8) — `docs: unify agent instructions and project state`, base `feat/v0.6.1`. Публикация подтверждена Git/GitHub; merge не выполнялся |
+| 10.10.2026 | Затем согласована интеграция через `feat/v0.6.1`; fetch подтвердил ветку от `bd98ecd`. Создан документационный commit, ветка `docs/unified-agent-state` отправлена в origin и опубликован [Draft PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8) — `docs: unify agent instructions and project state`, base `feat/v0.6.1`. На этом историческом этапе merge ещё не выполнялся |
 | 10.10.2026 | По замечанию P2 независимого review исправлены устаревшие записи о публикации: сохранена хронология локального черновика и последующего Draft PR #8. Проверены Markdown, внутренние ссылки и `git diff --check`; изменён только этот Ledger, код и WPF-тест не исправлялись |
+| 10.10.2026 | В `fix/v061-windowchrome-dpi` воспроизведён WPF-сбой: отдельный тест 0/1, полный прогон Core 241/241 и App 10/11 (всего 251/252). Причина подтверждена измерением DPI, обратимым переключением rounding в памяти и изолированным layout при пяти DPI; действия всех caption buttons работают. Исходники не менялись, исправление предложено на согласование |
+| 10.10.2026 | Владелец согласовал исправление теста; в той же fix-ветке добавлены строгие проверки заданных размеров и DPI-aware фактических размеров всех трёх кнопок. Restore/build/format успешны, отдельный тест 1/1, полный прогон 252/252 без пропусков; compiled helper проверен на пяти DPI и двух смешанных X/Y масштабах. На момент завершения этого локального этапа были изменены только тест и Ledger, публикация ещё не выполнялась |
+| 10.10.2026 | GitHub подтвердил последующее объединение [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8) в `feat/v0.6.1` (`c31c982`) и публикацию исправления теста в [Draft PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9) (`e7aafe7`, `fix/v061-windowchrome-dpi` → `feat/v0.6.1`). Независимое review подтвердило реализацию DPI-aware проверки и выявило P2: Ledger сохранял предпубликационные формулировки как текущие; эта документационная задача исправляет разделение истории и актуального снимка |
 
 SHA собственных документационных коммитов в Ledger не записываются;
 их следует проверять по Git и истории PR.
@@ -312,9 +339,10 @@ SHA собственных документационных коммитов в 
 ## 12. Последние проверки
 
 Среда: Windows x64, .NET SDK `10.0.401`, runtimes `10.0.12`.
-Проверялся verified main `bd98ecd`; после него изменялась только документация.
+До исправления теста проверялся verified main `bd98ecd`; на этапе первоначальной
+документационной задачи после него изменялась только документация.
 
-| Проверка 10.10.2026 | Результат |
+| Историческая проверка 10.10.2026 до исправления теста | Результат |
 | --- | --- |
 | `git fetch origin`, remote/main/tag | Успешно; origin и SHA подтверждены, начальное tracked/untracked дерево чистое |
 | `dotnet restore MinecraftLauncher.sln` | Успешно; потребовался доступ вне песочницы к пользовательской NuGet configuration/cache |
@@ -326,21 +354,52 @@ SHA собственных документационных коммитов в 
 | Packaging, NuGet audit, installed/portable E2E | В текущей сессии не выполнялись; прежние результаты отдельно указаны выше |
 
 Первоначальные fetch/restore внутри песочницы встретили ограничения доступа;
-повтор с разрешённым доступом прошёл. WPF failure воспроизводится вне песочницы,
-поэтому его нельзя списать на эти ошибки окружения. Документационная работа не
-является исправлением теста или основанием выпускать следующую версию.
+повтор с разрешённым доступом прошёл. WPF failure воспроизводился вне песочницы,
+поэтому его нельзя было списать на эти ошибки окружения. Первоначальная документационная
+работа сама по себе не являлась исправлением теста или основанием выпускать следующую версию.
+
+Исторические проверки этапа исправления, 10.10.2026, локальная `fix/v061-windowchrome-dpi`:
+
+| Проверка | Результат |
+| --- | --- |
+| Git/fetch/scope | До публикации HEAD совпадал с актуальной интеграционной основой; незакоммичены были только тест и Ledger, диагностические записи сохранены |
+| `dotnet restore MinecraftLauncher.sln` | Успешно с разрешённым доступом; первоначальная попытка в песочнице не смогла прочитать пользовательский NuGet.Config |
+| `dotnet build MinecraftLauncher.sln --no-restore` | Успешно; 0 warnings, 0 errors |
+| Отдельный `CaptionButtonsExecuteTheirWindowActions`, `--no-build --no-restore` | 1/1 passed; реальное окно на этом компьютере при DPI 150% |
+| `dotnet test MinecraftLauncher.sln --no-build --no-restore` | Core 241/241, App 11/11; всего 252 passed, 0 failed, 0 skipped |
+| `dotnet format MinecraftLauncher.sln --verify-no-changes --no-restore` | Успешно, exit 0; форматирование не меняло файлы |
+| Multi-DPI и midpoint | Скомпилированный helper проверен на изолированном WPF layout с SetRootDpi: 100/125/150/175/200%, дополнительно X/Y 125/175% и 175/125%. Обе оси и midpoint-to-even соответствуют WPF |
+| Контроль регрессий helper | Отклонены неправильные Width/Height, отключённый rounding и отсутствие layout (нулевые Actual-размеры) |
+| Markdown/ссылки/`git diff --check`/scope | На этапе исправления проверены структура Ledger, внутренние файловые ссылки и diff; изменения ограничивались `WindowChromeBehaviorTests.cs` и этим Ledger |
+
+Полный оконный сценарий теста выполнялся при фактическом DPI 150%; другие масштабы
+проверены на изолированном layout, а не на физических мониторах. Проверки helper
+выполнялись диагностическими командами в памяти, новых тест-кейсов/файлов не добавлено.
+Версия, зависимости, MainWindow.xaml и UseLayoutRounding приложения не менялись.
+После этого исторического локального этапа commit/push и создание Draft PR #9 были выполнены;
+merge не выполнялся. GitHub checks для опубликованного head отсутствуют, поэтому 252/252 —
+результат предыдущего локального прогона, а не подтверждение CI.
+
+Текущая документационная проверка, 10.10.2026:
+
+| Проверка | Результат |
+| --- | --- |
+| Git/fetch | До изменений рабочая ветка `fix/v061-windowchrome-dpi` была чистой и совпадала с `origin/fix/v061-windowchrome-dpi` на `e7aafe7`; `origin/main` и `origin/feat/v0.6.1` подтверждены fetch |
+| GitHub | PR #8 merged в `feat/v0.6.1`; PR #9 открыт как Draft, не merged; check runs/statuses/workflow runs для опубликованного head отсутствуют |
+| Scope | Документационное исправление ограничено `AGENTS.md` и `docs/PROJECT_LEDGER.md`; `WindowChromeBehaviorTests.cs` не изменяется |
+| Тесты | Не запускались: код не менялся; 252/252 относятся к предыдущему локальному прогону исправления WPF/DPI-теста |
+| Документация | Markdown-структура и относительные ссылки корректны; проверка секретов/приватных адресов и `git diff --check` прошла; diff содержит только `AGENTS.md` и Ledger |
 
 ## 13. Следующие действия и миграция документов
 
-1. Независимое review Draft PR документации в `feat/v0.6.1`; решение о merge принимается
-   отдельно. Старые status/roadmap/handoff сохраняются до отдельного согласования удаления.
-2. Получить опубликованную docs-ветку для review на нужных компьютерах; после
-   согласованного merge синхронизировать Ledger/AGENTS через `feat/v0.6.1`, на каждой
-   машине проверить remote/branch/HEAD. Стабильный main в этом шаге не меняется.
-3. Отдельно исследовать WPF/DPI test failure и восстановить зелёную baseline-проверку.
-4. После согласования документации начать программную задачу v0.6.1: launch mode,
+1. Проверить исправление P2 и актуальный head в Draft PR #9; решение о merge в
+   `feat/v0.6.1` принимается отдельно. `main` и `release/v0.6.0` не менять.
+2. После согласованного merge PR #9 синхронизировать рабочие копии на других машинах
+   и заново проверить remote/branch/HEAD. Старые status/roadmap/handoff сохранять
+   до отдельного согласования удаления.
+3. После отдельного согласования начать программную задачу v0.6.1: launch mode,
    затем RAM и UX; версию приложения менять только в отдельной release preparation.
-5. После v0.6.1 проектировать v0.6.2; Pack Manager вести отдельными design/implementation PR.
+4. После v0.6.1 проектировать v0.6.2; Pack Manager вести отдельными design/implementation PR.
 
 Информация [PROJECT_STATUS.md](PROJECT_STATUS.md), [ROADMAP.md](ROADMAP.md) и
 [AI_HANDOFF.md](AI_HANDOFF.md) перенесена по смыслу: release/state/storage/ограничения —
