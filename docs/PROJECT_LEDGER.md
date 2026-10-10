@@ -302,11 +302,12 @@ code signing и срок; частые реальные диагностичес
 | 09.10.2026 | Feed asset scope и release target v0.6.0: [1ae3ae7](https://github.com/lDiestrol/minecraft-launcher/commit/1ae3ae74b1b70d92031fe8706f80f85e506efd56); ранее записаны 252 passed, build/format/audit/feed и пользовательский installed E2E |
 | 09.10.2026 | Status/roadmap/server plan в main через [PR #7](https://github.com/lDiestrol/minecraft-launcher/pull/7), [bd98ecd](https://github.com/lDiestrol/minecraft-launcher/commit/bd98ecd721298981508d54466d11089c1647ab4f) |
 | 10.10.2026 | Ноутбук: чистая `feat/mvp2-game-launch` (`e77be5f`) → fetch → main `bd98ecd`; проверены публичный release и ветки, restore/build/test/format/feed |
-| 10.10.2026 | Владелец разрешил документационную ветку несмотря на 1 WPF failure; создана `docs/unified-agent-state`, добавлены AGENTS/CLAUDE/Ledger, исправлены ссылки и описания. Локальный черновик, commit/PR отсутствуют; удаления не выполнялись |
-| 10.10.2026 | Согласована интеграция через `feat/v0.6.1`; fetch подтвердил ветку от `bd98ecd`. Документация подготовлена к одному commit/push и Draft PR `docs: unify agent instructions and project state` в эту базу. Факт и URL публикации проверяются по Git/GitHub, SHA текущего commit не записывается внутри самого commit |
+| 10.10.2026 | Владелец разрешил документационную ветку несмотря на 1 WPF failure; создана `docs/unified-agent-state`, добавлены AGENTS/CLAUDE/Ledger, исправлены ссылки и описания. На первоначальном этапе это был локальный черновик без commit и PR; удаления не выполнялись |
+| 10.10.2026 | Затем согласована интеграция через `feat/v0.6.1`; fetch подтвердил ветку от `bd98ecd`. Создан документационный commit, ветка `docs/unified-agent-state` отправлена в origin и опубликован [Draft PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8) — `docs: unify agent instructions and project state`, base `feat/v0.6.1`. Публикация подтверждена Git/GitHub; merge не выполнялся |
+| 10.10.2026 | По замечанию P2 независимого review исправлены устаревшие записи о публикации: сохранена хронология локального черновика и последующего Draft PR #8. Проверены Markdown, внутренние ссылки и `git diff --check`; изменён только этот Ledger, код и WPF-тест не исправлялись |
 
-Следующая запись дополняет журнал результатами новой задачи; не приписывайте
-незакоммиченному черновику SHA будущего документационного commit.
+SHA собственных документационных коммитов в Ledger не записываются;
+их следует проверять по Git и истории PR.
 
 ## 12. Последние проверки
 
