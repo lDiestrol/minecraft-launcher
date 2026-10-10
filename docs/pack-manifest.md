@@ -1,5 +1,8 @@
 # Pack Manifest v1
 
+Состояние реализации и известные ограничения: [PROJECT_LEDGER.md](PROJECT_LEDGER.md).
+Нормативный контракт ниже остаётся версией 1.
+
 Pack Manifest — отдельный от Server Protocol контракт статического HTTP-хостинга. `profiles.json` указывает `manifestUrl`, а manifest перечисляет только Launcher-managed файлы сборки.
 
 ## Schema v1
@@ -69,7 +72,9 @@ State считается недоверенным: schema, profile, paths, hashe
 
 Launcher всегда проверяет SHA-256 существующих manifest-файлов, даже если `packVersion`, size и state совпадают. Нужные файлы последовательно загружаются потоково в `instances/<profile-id>/.launcher/staging/<operation-id>`, одновременно считаются bytes и SHA-256. `Content-Length`, если он есть, обязан совпасть с `size`; поток без длины не может превысить ожидаемый размер.
 
-Destination не изменяется до проверки exact size и SHA-256. Verified файл публикуется на том же volume через `File.Move` для нового destination или `File.Replace` для существующего. Сначала подготавливаются все downloads, затем файлы публикуются, после чего удаляются obsolete managed-файлы и атомарно заменяется `managed-state.json`. При HTTP/hash/size/cancellation failure старый destination и старый state остаются нетронутыми; staging очищается best-effort.
+Destination не изменяется до проверки exact size и SHA-256. Verified файл публикуется на том же volume через `File.Move` для нового destination или `File.Replace` для существующего. Сначала подготавливаются все downloads, затем файлы публикуются, после чего удаляются obsolete managed-файлы и атомарно заменяется `managed-state.json`. При HTTP/hash/size failure во время подготовки или cancellation до начала публикации старый destination и старый state остаются нетронутыми; staging очищается best-effort.
+
+Эта гарантия относится к сбою загрузки/проверки и отмене до начала публикации. Атомарна замена каждого файла и state отдельно, а не всего pack как одной транзакции: rollback/journal отсутствуют. I/O failure или crash во время публикации/cleanup могут оставить частично обновлённые файлы со старым state. После последней проверки cancellation перед apply публикация и запись state выполняются без отмены вызывающего кода.
 
 Перед записью, заменой или удалением Launcher повторно проверяет containment и все существующие parent directories. Переход через symlink, junction или другой `FileAttributes.ReparsePoint` запрещён. Manifest не управляет runtime, versions, libraries, assets, saves, screenshots, logs, корнем instance или `.launcher`.
 
