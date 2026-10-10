@@ -1,17 +1,21 @@
 # Единый журнал Minecraft Launcher
 
-> Проверено 10 октября 2026 года, часовой пояс Asia/Yekaterinburg (UTC+05:00).
+> Документационный снимок проверен 11 октября 2026 года, Asia/Yekaterinburg (UTC+05:00).
 > Стабильная ветка: `main`; verified commit после `git fetch origin`:
 > `bd98ecd721298981508d54466d11089c1647ab4f`.
 > Стабильная версия — **v0.6.0**. Следующая программная разработка — **v0.6.1**.
 > Предыдущий локальный полный прогон одиночного запуска: **280/280 проходят**;
-> build — 0 ошибок/предупреждений, format verify — чисто. Реальный Minecraft не запускался.
-> Публичный снимок на 10.10.2026: [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8)
+> build — 0 ошибок/предупреждений, format verify — чисто; это не новый прогон.
+> Владелец подтвердил пользовательский Minecraft smoke 10.10.2026: главное меню
+> в Singleplayer и автоматическое подключение в Server; это не CI и не installed update E2E.
+> Публичный снимок на 11.10.2026: [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8)
 > и [PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9) объединены в `feat/v0.6.1`.
 > Проверенная интеграционная основа — `52ee0d8d151e7e55327c20376a9678e78b3cc5c1`.
-> Реализация в `feat/v061-singleplayer-launch` подготовлена для независимого Draft-review
-> в `feat/v0.6.1`; актуальные head и PR определяются Git/GitHub (ссылки в разделе 2).
-> На этапе публикации код не менялся, restore/build/test/format повторно не запускались.
+> Реализация опубликована в [Draft PR #10](https://github.com/lDiestrol/minecraft-launcher/pull/10),
+> `feat/v061-singleplayer-launch` → `feat/v0.6.1`; merge не выполнен.
+> Владелец пересмотрел scope: v0.6.1 — запуск и установка/storage architecture;
+> v0.6.2 — UI/UX, v0.6.3 — Storage Manager, v0.7.0 — мультисерверность.
+> Здесь изменена только документация; installer не реализован, build/test/format не повторялись.
 
 ## 1. Назначение и источник состояния
 
@@ -61,16 +65,17 @@ Tag релиза и verified main различаются: после релиз�
 документация через PR #7. `git diff v0.6.0..origin/main` показывает только документацию.
 Названия старых feature/release-веток не задают актуальную основу разработки.
 
-Проверенный снимок Git/GitHub на 10.10.2026: `origin/main` — `bd98ecd`,
+Проверенный снимок Git/GitHub на 11.10.2026: `origin/main` — `bd98ecd`,
 `origin/feat/v0.6.1` — `52ee0d8`,
 `origin/release/v0.6.0` — `e426ecb`. [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8)
 объединён в `feat/v0.6.1` с merge commit `c31c982`; [PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9)
 также объединён в `feat/v0.6.1` с merge commit `52ee0d8`.
 Feature-ветка `feat/v061-singleplayer-launch` создана от этой актуальной основы.
 Актуальный head: [ветка на GitHub](https://github.com/lDiestrol/minecraft-launcher/tree/feat/v061-singleplayer-launch);
-независимое review: [PR этой ветки](https://github.com/lDiestrol/minecraft-launcher/pulls?q=is%3Apr+head%3Afeat%2Fv061-singleplayer-launch),
-целевая ветка — `feat/v0.6.1`. Эти ссылки не зависят от заранее неизвестного номера PR
-или собственного SHA публикационного коммита.
+независимое review: [Draft PR #10](https://github.com/lDiestrol/minecraft-launcher/pull/10),
+целевая ветка — `feat/v0.6.1`. До текущего документационного изменения проверены
+чистое дерево и совпадение HEAD/origin/PR head на `3ae67ac` (первоначальный commit реализации).
+SHA последующего документационного коммита следует смотреть в истории PR, не в Ledger.
 Статусы PR и HEAD изменяемы; перед следующей работой их следует проверить заново.
 
 Согласованная 10.10.2026 Git-стратегия: main сохраняет стабильную v0.6.0;
@@ -90,8 +95,10 @@ push feature-ветки и Draft PR; merge, tags и Release остаются з�
 | 0.4.0-rc.1 / 0.5.0-rc.1 | Исторические release notes | Сохранены в Git; публикация этих RC сейчас отдельно не проверялась |
 | v0.5.0 | Завершён, исторический stable | Tag `v0.5.0`, commit `c0e3990`; основа проверенного ранее installed update |
 | v0.6.0 | Текущий stable, опубликован | Dark Gaming UI, profile file management, locks/guardian, app updates и release tooling |
-| v0.6.1 | Частично реализован, не выпущен | Серверный/одиночный запуск одного профиля подготовлен для Draft-review в `feat/v061-singleplayer-launch` → `feat/v0.6.1`; точный RAM и прочая UX-полировка не реализованы в этой задаче |
-| v0.6.2 | Согласован, запланирован после v0.6.1 | Размер данных, безопасное удаление установки профиля, отдельные shared-data операции |
+| v0.6.1 | Частично реализован, не выпущен | Server/Singleplayer и общий pipeline опубликованы в Draft PR #10; пользовательский smoke подтверждён владельцем. GUI installer, выбор диска для независимых App/GameData, адаптация путей и совместимость нового installed update ещё не реализованы |
+| v0.6.2 | Scope пересмотрен владельцем, запланирован | Компактный адаптивный Dashboard, оконный/maximized UX, ScrollBar, карточки, точный RAM, Server List Ping и реальные players/slots, статусы/ошибки |
+| v0.6.3 | Согласован, запланирован | Storage Manager: размеры, безопасное удаление и shared cleanup, перенос данных и отдельные каталоги профилей |
+| v0.7.0 | Согласован, запланирован | Несколько серверных источников, source-aware profile identity, каталог/поиск/избранное, управление сборками и совместимое развитие news/feed |
 | Серверный Pack Manager | Отдельный согласованный трек проектирования | Publisher, версионирование клиентских pack, планируемый LXC/NGINX; реализация и deployment не подтверждены |
 | Единая документация агентов | Объединена в `feat/v0.6.1` | [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8) объединён 10.10.2026; merge commit `c31c98293cec665c5bffa7022263a4ffc7661bbc` |
 
@@ -122,8 +129,8 @@ Guardian запускает Java и удерживает профильную з
 основной UI. Есть ручная проверка в Settings и dismissible banner. Download/apply
 требуют действия пользователя. Источник и channel не приходят из server config.
 Installed channel использует Velopack package state; вывод channel в UI ещё относится
-к v0.6.1. Начальная фраза ViewModel о ручной проверке не описывает уже реализованный
-startup check — это известная UX-несогласованность.
+к UI/UX v0.6.2 по пересмотренному scope. Начальная фраза ViewModel о ручной проверке
+не описывает уже реализованный startup check — это известная UX-несогласованность.
 
 **Исторически подтверждено владельцем (09.10.2026):** установка stable v0.5.0,
 обнаружение и скачивание v0.6.0, apply/restart, сохранение settings и успешный Minecraft
@@ -141,9 +148,18 @@ backend/admin panel и управление resourcepacks/shaderpacks через
 
 ## 5. План v0.6.1 — согласованный scope
 
-Только два режима запуска одного профиля, точный ввод RAM и небольшие UX-исправления.
-Server Protocol v1, Pack Manifest v1 и формат settings остаются совместимыми.
-Отдельные локальные сборки, storage manager и серверная админка сюда не входят.
+Владелец официально пересмотрел приоритеты: два режима запуска одного профиля плюс
+правильная графическая установка с выбором диска/каталога, первоначальным GameData
+на том же диске и сохранением существующих данных/installed update v0.6.0.
+Server Protocol v1 и Pack Manifest v1 остаются совместимыми; локальные пути задаёт
+пользователь/Launcher, а не серверные JSON. Формат существующих settings должен читаться.
+
+История решения: первоначальный scope v0.6.1 включал точный RAM и небольшие UX-правки,
+а Storage Manager планировался как v0.6.2. Это прежний план, не текущая очередь:
+Точный RAM и UX перенесены в v0.6.2, Storage Manager — в v0.6.3; новый scope v0.6.2
+дополнительно включает редизайн Dashboard и реальные ping/player count.
+Полноценный Storage Manager, произвольный перенос существующих установок и серверная
+админка **не входят** в v0.6.1. Новая установка/storage architecture ниже — план, не готовая функция.
 
 ### 5.1. Серверный и одиночный запуск
 
@@ -167,11 +183,93 @@ ServerIp не попадает в arguments. Tests проверяют факти
 установленного CmlLib на legacy/QuickPlay metadata, sync/cancellation/exit и команды.
 Обе кнопки помещаются в viewport 900×650 и доступны по Tab; synthetic layout проверен
 при пяти DPI. Подробнее: [game-launch.md](game-launch.md), результаты — раздел 12.
-Реальный Minecraft/menu/world/server smoke ещё не выполнен. Публикация для
-независимого Draft-review согласована отдельно; дальнейшая разработка и merge
-требуют нового разрешения.
+Первоначальный агентский этап не запускал Java/Minecraft. Затем владелец подтвердил
+ручным smoke 10.10.2026: «Одиночная игра» открывает обычное главное меню Minecraft,
+«Играть» автоматически подключается к серверу. Это пользовательское свидетельство,
+не новый агентский прогон и не CI; создание/сохранение мира, новый installer и installed
+update этим не проверены. Реализация опубликована в Draft PR #10; merge и дальнейшая
+программная разработка требуют отдельного разрешения.
 
-### 5.2. Точный RAM в мегабайтах
+### 5.2. v0.6.1 — Installer & Storage Architecture
+
+Компактное ТЗ следующей сессии. Требования согласованы, конкретные механизмы ниже
+предлагаются для design review и **ещё не реализованы**.
+
+1. **Границы хранения.** App — отдельный каталог Velopack; GameData — вне App и
+   его version/current/update-каталогов. Общие `versions`, `assets`, `libraries`,
+   managed Java/`runtime` используются повторно; `instances/<profileId>` содержат
+   `mods`, `config`, `saves`, `screenshots`, `resourcepacks`, `shaderpacks` и локальные
+   данные профиля. Минимальные служебные настройки/указатель root отделены от больших
+   файлов; размещение settings/logs и ограничения временных файлов нужно согласовать.
+2. **Выбор тома.** GUI предлагает диск и каталог App; первоначальный GameData —
+   соседний независимый каталог на том же выбранном томе (например, App и GameData
+   под выбранной папкой на D:). До записи проверяются canonical path, права, место
+   и reparse boundaries. Большие download/cache/staging не должны скрыто оставаться
+   на C:. Минимальные OS/служебные записи допустимы; проверить также временные пакеты
+   установщика/обновления. Наличие нужного GUI у закреплённого Velopack `1.2.158`
+   **не подтверждено**: сначала проверить совместимый вариант, сохранив update pipeline.
+3. **Доверенный root locator.** Предлагается небольшой versioned per-user файл
+   конфигурации вне App, с абсолютным нормализованным GameData root, защищённый
+   правами текущего пользователя и атомарно обновляемый на собственном томе.
+   Точное место/формат и приоритет legacy detection — открытый вопрос. Указатель не
+   берётся из server JSON или guardian request; недоступный/невалидный выбранный root
+   даёт понятную ошибку, а не молчаливый новый instance на C:.
+4. **Все потребители путей.** `LauncherDataPaths` уже принимает root в конструкторе,
+   но App и отдельный guardian сейчас создают default paths. Общий доверенный resolver
+   должен отработать в обоих процессах **до** проверки request path; поле RootDirectory
+   в request не является источником доверия. Адаптировать CmlLib shared data и instance
+   paths, Java, profile/shared locks, guardian requests/state, disk-space и path-safety
+   проверки без обхода containment/reparse защиты или двух lock identities одного root.
+5. **Staging и atomic replacement.** Pack staging находится на томе назначения,
+   не в системном `%TEMP%` другого диска. То же правило для временного state/settings
+   и atomic file replacement: source/target на одном томе. Гарантия остаётся пофайловой,
+   не полной pack-транзакцией; crash/частичный I/O failure требуют безопасного recovery.
+6. **Legacy/update safety.** При обновлении v0.6.0 сохранить прежний GameData root,
+   profile identity, nickname/RAM/settings, миры и пользовательские файлы; новая схема
+   установки не означает автоматический перенос старых данных. Existing installations
+   должны продолжить работать, update заменяет только App. Учесть lifetime guardian,
+   активную игру/блокировки и отказ установки; не терять действующий root при сбое.
+   Произвольные переносы — v0.6.3. Update/uninstall не должны попутно удалять worlds.
+7. **Проверки.** Чистая установка на D: и первый реальный запуск обоих режимов;
+   почти заполненный C: с достаточным местом на выбранном томе (проверить фактические
+   download/temp/cache пути); несколько профилей одной версии с shared reuse и
+   изоляцией instance; повторный запуск после рестарта без повторного скачивания
+   неизменных файлов. Installed v0.6.0 → v0.6.1: сохранность settings/profiles/worlds,
+   корректный restart/guardian/update и отсутствие записи Minecraft внутрь App.
+   Добавить unit/integration cases для root persistence/legacy precedence, недоступного
+   диска, permissions/reparse, locks и I/O failure; packaging/installed E2E — отдельные
+   реальные проверки, пользовательский smoke 10.10 их не заменяет.
+8. **Решения и зависимости.** Сначала compatibility study GUI/Velopack, затем
+   согласование root/legacy/settings контракта, затем адаптация всех потребителей и
+   тестов, installer integration, clean-install/installed-update E2E. Открыты технология
+   GUI, per-user/all-users/ACL, temporary package location, legacy discovery и fallback,
+   portable behavior, несколько установок, offline/read-only volume и смена буквы диска.
+   Не менять зависимости или installer scripts до отдельного разрешения на реализацию.
+
+### 5.3. Порядок и gate v0.6.1
+
+Независимое review PR #10 и merge только по разрешению владельца; installer — отдельная
+согласованная feature-задача от актуальной `feat/v0.6.1`, не продолжение кода в этом PR.
+Первый технический шаг — read-only проверка возможностей закреплённого Velopack/vpk
+и совместимых GUI-вариантов: выбор App/GameData тома, upgrade detection, package/temp
+paths и сохранение существующего update pipeline. Результат — матрица совместимости
+и согласованный контракт bootstrap/root resolver до программирования.
+Release gate: build/tests/format, реальные clean first-launch, worlds/settings/restart,
+release feed/packaging и installed update новой версии. Версии и зависимости в этой
+документационной задаче не меняются; полная v0.6.1 ещё не готова к выпуску.
+
+## 6. Последующие клиентские версии — пересмотренный scope
+
+### 6.1. v0.6.2 — интерфейс и UX
+
+Компактный адаптивный Dashboard, корректные оконный/maximized режимы, тёмные ScrollBar
+и более компактные карточки профилей. Реальный Minecraft Server List Ping возвращает
+ping, online players и максимальные slots; нужны таймауты, состояние «нет данных»
+и отсутствие фиктивных показателей. Не ослаблять строгий Server Protocol v1 ради UI.
+Улучшить статусы/ошибки, объяснения блокировок Play/Repair/Delete и отображение
+реального channel `stable`/`dev` из package/runtime state; детали ошибок — в локальном логе.
+
+Точный RAM в мегабайтах (сохранённые требования прежнего scope v0.6.1):
 
 - Slider остаётся; рядом появляется числовое поле с точностью 1 МБ.
 - Ручное значение (например, 3073 МБ) не округляется до 1024 МБ или шага slider.
@@ -189,29 +287,16 @@ min/max и малая физическая RAM учитываются; slider и
 keyboard/focus/DPI остаются удобными. Предложение: одно точное числовое значение
 является источником состояния, slider — способом его изменения.
 
-### 5.3. Ограниченная UX-полировка и порядок работ
+Дополнительно проверить compact/maximized layout, keyboard/focus/DPI и ScrollBar;
+для Server List Ping — успешный ответ, offline/timeout, malformed response и отсутствие
+данных без подмены нулями. Реальные параметры и timeout policy согласовать перед реализацией.
 
-Согласованы объяснения блокировок Play/Repair/Delete, понятные ошибки с деталями в
-локальном логе и реальный channel `stable`/`dev` из package/runtime state.
-Фиктивные online/ping/player count и новые server fields не добавляются.
+### 6.2. v0.6.3 — Storage Manager
 
-1. После отдельного разрешения на программную задачу создать feature-ветку от актуальной
-   `feat/v0.6.1`, сверив также стабильный `origin/main`.
-2. Исследовать request/coordinator/CmlLib options; добавить намерение запуска и тесты Core.
-3. Сохранить server path, добавить singleplayer и вторую кнопку в адаптивном UI.
-4. Реализовать точный RAM и persistence tests; допустим отдельный PR внутри v0.6.1.
-5. Выполнить ограниченные UX-исправления и проверки layouts/DPI.
-6. Пройти build/tests/format, ручной smoke обоих режимов, settings/restart,
-   release feed и installed update path именно новой версии.
+История: нижеследующие ownership/cleanup требования ранее планировались как v0.6.2;
+по решению владельца они перенесены в v0.6.3, а не отменены.
 
-В реализации выбран Core enum `GameLaunchMode.Server/Singleplayer`;
-UI не управляет CmlLib flags напрямую. Остальные этапы этого плана не начинались.
-Результаты диагностики и локального исправления WPF-теста приведены ниже;
-они не разрешают произвольное расширение функционального scope v0.6.1.
-
-## 6. План v0.6.2 — согласованный отдельный этап
-
-После завершения v0.6.1 показать объём выбранного профиля и отдельно общих данных,
+После завершения v0.6.1/v0.6.2 показать объём выбранного профиля и отдельно общих данных,
 добавить безопасное удаление **установки профиля** и отдельное управление общими
 `assets`, `libraries`, `versions` и managed Java/runtime.
 
@@ -233,6 +318,20 @@ Reference index общих файлов вводить только если и�
 изоляция других профилей, shared accounting, cancellation, частичный отказ удаления
 и последующая загрузка. До реализации нужно решить, что считать установкой сверх
 managed pack, как отличать пользовательские config и какая recovery/rollback policy нужна.
+
+Дополнительно входят перенос **существующих** игровых данных и разные каталоги отдельных
+профилей. Нужны согласованный план переноса/cancellation/recovery и проверка всех
+root/lock identities; нельзя удалять shared-файлы, используемые другими профилями.
+Первоначальный выбор диска в v0.6.1 не является готовым Storage Manager или переносом.
+
+### 6.3. v0.7.0 — мультисерверность
+
+Несколько независимых серверных источников конфигураций; profile identity учитывает
+источник, чтобы одинаковые `profileId` не пересекали instances/settings/managed state/locks.
+Каталог серверов, поиск, избранное, удобное переключение и управление несколькими
+сборками. Миграция существующих identities и доверие к источникам требуют отдельного design.
+Будущее расширение news/feed — только совместимым согласованным способом, без
+нарушения строгого Server Protocol v1; новые поля нельзя просто добавлять в текущие JSON.
 
 ## 7. Pack Manager — независимый серверный трек
 
@@ -271,7 +370,7 @@ retention и read-only systemd timer. Все инфраструктурные о
 | --- | --- |
 | .NET 10 / WPF / MVVM | Core независим; App и Infrastructure зависят от Core; composition root явный |
 | Раздельные lifecycle | Velopack app update, CmlLib runtime preparation и game pack sync независимы |
-| Application/data roots | `%LOCALAPPDATA%\lDiestrol.MinecraftLauncher` / `%LOCALAPPDATA%\MinecraftLauncher` |
+| Application/data roots v0.6.0 | Действующая default-схема: `%LOCALAPPDATA%\lDiestrol.MinecraftLauncher` / `%LOCALAPPDATA%\MinecraftLauncher`; selectable roots v0.6.1 пока только предложены в разделе 5.2 |
 | Profile/shared storage | `instances/<id>` и общие `assets`, `libraries`, `versions`, `runtime` |
 | Managed ownership | `.launcher/managed-state.json`, недоверенный state проверяется; пользовательские unmanaged пути сохраняются |
 | Pack validation | SHA-256 при каждом Sync/Repair, exact size, staging, атомарная замена каждого файла; полный pack rollback отсутствует |
@@ -286,7 +385,7 @@ retention и read-only systemd timer. Все инфраструктурные о
 
 | Запись | Факт и действие |
 | --- | --- |
-| WPF test failure, 10.10.2026 — исправление опубликовано | До исправления `CaptionButtonsExecuteTheirWindowActions`, assertion line 63: ожидалось `ActualHeight=41`, реально `41.333333333333336`. Диагностика на актуальной `feat/v0.6.1` подтвердила DPI 150% и унаследованный `UseLayoutRounding=True`: 41 DIP округляется до 62 физических пикселей, затем 62 / 1.5 DIP. DPI-aware исправление опубликовано в [Draft PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9); действия кнопок сохранены, UI не менялся, предыдущий полный прогон — 252/252 |
+| WPF test failure, 10.10.2026 — исправление объединено | До исправления `CaptionButtonsExecuteTheirWindowActions`, assertion line 63: ожидалось `ActualHeight=41`, реально `41.333333333333336`. Диагностика на актуальной `feat/v0.6.1` подтвердила DPI 150% и унаследованный `UseLayoutRounding=True`: 41 DIP округляется до 62 физических пикселей, затем 62 / 1.5 DIP. DPI-aware исправление объединено через [PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9); действия кнопок сохранены, UI не менялся, предыдущий полный прогон — 252/252 |
 | Исторические 252 passed | Записаны для релиза 09.10; диагностические 251 passed/1 failed на ноутбуке и последующие 252 passed после исправления теста — отдельные результаты, не переписывающие историю релиза |
 | Atomic publish терминология | File.Replace/Move атомарны пофайлово; нет journal/backup/rollback всей pack-транзакции. I/O failure или crash в apply могут оставить частично обновлённый pack и старый state. Нельзя обещать полный crash rollback |
 | Длина архитектурных классов | MainViewModel/PackSyncService совмещают много обязанностей; возможный рефакторинг — технический долг, не согласованная новая функция v0.6.1 |
@@ -318,15 +417,22 @@ WindowChrome, IsEnabled, Focusable и действия кнопок сохран
 
 ## 10. Нерешённые вопросы
 
-Перед v0.6.1: провести независимое review и реальный Minecraft smoke обоих режимов
-с выбранным модпаком (server connect, main menu, локальный мир и сохранность данных).
-CmlLib options/arguments и compact 900×650/DPI проверены автоматическими тестами.
-Остаются UX clamp/validation при известных
-RAM min/max; достоверное получение/отображение Velopack channel в installed,
-portable и development mode; разделение сообщений блокировки Play/Repair/Delete.
+Перед v0.6.1: независимое review PR #10, совместимый GUI installer и root/legacy contract
+(раздел 5.2). Пользователь подтвердил main menu/server connect; создание/сохранение мира
+и сохранность данных ещё требуют проверки. Реальные clean-install на выбранном диске,
+packaging и installed update v0.6.0 → v0.6.1 не выполнены. CmlLib options/arguments
+и compact 900×650/DPI ранее проверены автоматическими тестами.
 
-Перед v0.6.2: состав установки профиля; пересечение managed config и личных настроек;
-достоверный shared-file usage; необходимость preview; частичные ошибки cleanup/rollback.
+Перед v0.6.2: точный RAM clamp/validation при безопасных min/max; реальные ping/player/slots,
+timeout/no-data policy; достоверный Velopack channel в installed/portable/development;
+компоновка и понятные сообщения блокировок Play/Repair/Delete.
+
+Перед v0.6.3: состав установки профиля; пересечение managed config и личных настроек;
+достоверный shared-file usage; preview; частичные ошибки cleanup/rollback; безопасный
+перенос данных и отдельных instance roots без потери миров или обхода lock/ownership.
+
+Перед v0.7.0: source-aware identity/миграция текущих профилей, доверие к нескольким
+источникам, границы каталога/избранного и совместимый путь расширения строгих v1 схем.
 
 Для Pack Manager: фактические public URL, NGINX roots/cache/invalidation,
 ownership/permissions и текущий publishing source; backup/retention/rollback;
@@ -357,6 +463,8 @@ code signing и срок; частые реальные диагностичес
 | 10.10.2026 | При подготовке одиночного запуска fetch/GitHub API подтвердили дальнейший merge [PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9), интеграционный baseline `52ee0d8`. На старте дерево было чистым; создана `feat/v061-singleplayer-launch` от актуальной `origin/feat/v0.6.1`. Main/release не менялись |
 | 10.10.2026 | По отдельному разрешению реализованы два режима одного профиля, общие launch pipeline/settings/instance и вторая кнопка. Добавлены проверки CmlLib options/arguments, обоих режимов sync/locks/cancel/exit/commands и compact/DPI/Tab. Restore/build/format успешны; Core 261/261 + App 19/19 = 280/280. На первоначальном локальном этапе commit/push/PR ещё не выполнялись; работа была остановлена для согласования публикации |
 | 10.10.2026 | Затем владелец согласовал публикацию одним коммитом `feat: add singleplayer launch mode`, push `feat/v061-singleplayer-launch` и Draft PR в `feat/v0.6.1` для независимого review. Fetch повторно подтвердил baseline `52ee0d8`; проверены полный diff и три новых файла. Код и тесты на этом этапе не менялись, результаты 280/280/build/format относятся к предыдущему прогону. Состояние публикации определяется по ссылкам на ветку/PR в разделе 2; merge, tag/release и продолжение v0.6.1 не разрешены |
+| 10.10.2026 | Одиночный запуск опубликован в [Draft PR #10](https://github.com/lDiestrol/minecraft-launcher/pull/10), `feat/v061-singleplayer-launch` → `feat/v0.6.1`; первоначальный commit реализации — `3ae67ac`. Владелец подтвердил отдельный ручной smoke: Singleplayer открывает обычное меню Minecraft, Server автоматически подключается. Это пользовательская проверка, не агентский запуск и не CI |
+| 11.10.2026 | По новому согласованному заданию владельца актуализирован только Ledger: v0.6.1 — запуск + GUI installer/App/GameData, v0.6.2 — UI/UX/RAM/ping, v0.6.3 — Storage Manager, v0.7.0 — несколько источников. Прежний scope сохранён как история; добавлено предложенное Installer & Storage Architecture ТЗ. Документация публикуется одним согласованным commit и обычным push в существующий Draft PR #10; код, версии, зависимости, Pack Manager и исторические документы не меняются, реализация установщика не начинается |
 
 SHA собственных документационных коммитов в Ledger не записываются;
 их следует проверять по Git и истории PR.
@@ -437,7 +545,7 @@ SHA собственных документационных коммитов в 
 с одиночным миром. Существующие process/guardian tests запускают тестовые процессы,
 не Minecraft. Полная v0.6.1 не считается готовой к выпуску по этому локальному прогону.
 
-Проверки этапа публикации для независимого review, 10.10.2026:
+Исторические проверки этапа публикации для независимого review, 10.10.2026:
 
 | Проверка | Результат |
 | --- | --- |
@@ -447,18 +555,39 @@ SHA собственных документационных коммитов в 
 | Документация | Публикационные формулировки актуализированы; Markdown/UTF-8/fences/таблицы и 29 внутренних ссылок проверены, `git diff --check` прошёл. Планы v0.6.2/Pack Manager не менялись |
 | Ограничения | Реальный Minecraft smoke, packaging и installed update E2E не выполнялись; перечислены в описании Draft PR. После публикации работа останавливается для независимого review |
 
+Последующее пользовательское подтверждение, 10.10.2026: владелец вручную проверил
+обычное главное меню Minecraft в Singleplayer и автоматическое серверное подключение
+в Server. Источник — сообщение владельца, не CI и не запуск агента. Предыдущие строки
+«не запускался» описывают именно исторический агентский этап; реальная проверка worlds,
+нового installer/packaging и installed update v0.6.1 этим подтверждением не покрыта.
+
+Документационная актуализация roadmap/installer plan, 11.10.2026:
+
+| Проверка | Результат |
+| --- | --- |
+| Git/fetch/GitHub | Fetch успешен с разрешённым доступом; до изменения чистая `feat/v061-singleplayer-launch`, HEAD/origin/PR head `3ae67ac`; main `bd98ecd`, интеграционная основа `52ee0d8`, release `e426ecb`. PR #10 открыт Draft в `feat/v0.6.1`, не merged |
+| Scope | Только `docs/PROJECT_LEDGER.md`; исходники, тесты, зависимости, версии, CI/scripts и исторические документы не меняются. Раздел Pack Manager сохранён без изменений |
+| Документация | Проверены UTF-8, Markdown fences/заголовки/списки/таблицы и 27 внутренних файловых ссылок Ledger; diff содержит только Ledger, Pack Manager сохранён. В добавленном тексте не найдены secret/private-address patterns, `git diff --check` чистый; контроль diff/scope повторяется для коммита |
+| Build/test/format | Не запускались для документационной правки. 280/280, build 0 warnings/errors и чистый format — предыдущие локальные результаты, не новый прогон и не CI |
+| Ограничения | Installer architecture — предложение для следующей отдельно разрешённой сессии. Нового Minecraft/packaging/installed update E2E нет; merge/release/tag не выполняются |
+
 ## 13. Следующие действия и миграция документов
 
-1. Выполнить независимое review Draft PR `feat/v061-singleplayer-launch` →
-   `feat/v0.6.1` (ссылка на PR ветки в разделе 2); merge — только после отдельного разрешения.
-   `main` и `release/v0.6.0` не менять.
-2. Проверить реальный smoke обоих режимов с выбранным профилем, совместимость pack
-   и сохранность worlds/settings. Рабочие копии других машин синхронизировать с
-   повторной проверкой remote/branch/HEAD; старые status/roadmap/handoff сохранять
-   до отдельного согласования удаления.
-3. Точный RAM и прочую UX-полировку v0.6.1 реализовывать отдельными согласованными
-   задачами; версию приложения менять только в отдельной release preparation.
-4. После v0.6.1 проектировать v0.6.2; Pack Manager вести отдельными design/implementation PR.
+1. Выполнить независимое review [Draft PR #10](https://github.com/lDiestrol/minecraft-launcher/pull/10)
+   в `feat/v0.6.1`; merge — только после отдельного разрешения. `main` и `release/v0.6.0`
+   не менять. Эта задача заканчивается документацией, не реализацией установщика.
+2. Следующую техническую сессию начать с read-only compatibility study закреплённого
+   Velopack/vpk и GUI installer вариантов по разделу 5.3. До кода согласовать механизм
+   выбора тома, root locator/legacy fallback, временные package paths и совместимость update.
+3. После отдельного разрешения адаптировать пути App/CmlLib/guardian/locks/staging,
+   добавить проверки clean D:/почти полный C:/shared reuse/повторный запуск и installed
+   v0.6.0 → v0.6.1 update. Пользовательский main-menu/server smoke уже подтверждён,
+   но сохранность worlds/settings и installer/update gate ещё требуют реального теста.
+4. UI/UX, точный RAM и реальные ping/players — отдельный scope v0.6.2; Storage Manager
+   и перенос — v0.6.3; мультисерверность — v0.7.0. Pack Manager вести независимо.
+   Версию приложения менять только в согласованной release preparation.
+5. Рабочие копии других машин синхронизировать с повторной проверкой remote/branch/HEAD;
+   старые status/roadmap/handoff сохранять до отдельного согласования удаления.
 
 Информация [PROJECT_STATUS.md](PROJECT_STATUS.md), [ROADMAP.md](ROADMAP.md) и
 [AI_HANDOFF.md](AI_HANDOFF.md) перенесена по смыслу: release/state/storage/ограничения —
