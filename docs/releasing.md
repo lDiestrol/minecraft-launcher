@@ -1,5 +1,9 @@
 # Выпуск Minecraft Launcher
 
+Текущая stable-версия, verified main и последние результаты проверок находятся в
+[PROJECT_LEDGER.md](PROJECT_LEDGER.md). Эта инструкция не является разрешением
+создать tag, опубликовать Release или менять версию приложения.
+
 ## Зафиксированная конфигурация
 
 - .NET SDK / target: .NET 10, `net10.0-windows`;

@@ -23,17 +23,24 @@ dotnet run --project src/Launcher.App/Launcher.App.csproj
 
 ## Состояние проекта и планы
 
-- [Текущее состояние проекта](docs/PROJECT_STATUS.md)
-- [Roadmap версий и приоритетов](docs/ROADMAP.md)
+- [Единый журнал проекта: состояние, версии, планы и последние проверки](docs/PROJECT_LEDGER.md)
+- [Общие правила работы ИИ-агентов](AGENTS.md)
+- [Точка входа для Claude Code](CLAUDE.md)
 - [План серверного Pack Manager](docs/PACK_MANAGER_PLAN.md)
-- [Краткий контекст для продолжения другим ИИ](docs/AI_HANDOFF.md)
 
-Новые участники и AI-сессии должны начать с `PROJECT_STATUS.md` и `AI_HANDOFF.md`,
-а затем сверить изложенные там факты с актуальным Git и внешними production-данными.
+Новые участники и AI-сессии начинают с `AGENTS.md` и `PROJECT_LEDGER.md` и проверяют
+remote, рабочую ветку, HEAD и актуальный `origin/main`. Следующая согласованная
+разработка — v0.6.1: одиночный режим того же профиля, точный RAM и небольшие
+UX-исправления. v0.6.2 и серверный Pack Manager ведутся отдельно.
+
+`main` сохраняет стабильную v0.6.0. Промежуточные PR следующей версии направляются
+в интеграционную `feat/v0.6.1`; проверяйте также её актуальную remote-ссылку.
+Готовая v0.6.1 позже переносится в main одним Squash & Merge после явного
+согласования владельца.
 
 ## Installation
 
-Обычному пользователю нужен только `lDiestrol.MinecraftLauncher-<version>-Setup.exe` из официального GitHub repository/release source проекта. Setup выполняет per-user установку Windows x64 и не требует отдельно установленного .NET Runtime или прав администратора. Установленное приложение и постоянные данные разделены:
+Обычному пользователю нужен Setup.exe из официального GitHub repository/release source проекта. В stable v0.6.0 опубликован файл `lDiestrol.MinecraftLauncher-stable-Setup.exe`. Setup выполняет per-user установку Windows x64 и не требует отдельно установленного .NET Runtime или прав администратора. Установленное приложение и постоянные данные разделены:
 
 - Velopack application: `%LOCALAPPDATA%\lDiestrol.MinecraftLauncher`;
 - settings, логи и Minecraft: `%LOCALAPPDATA%\MinecraftLauncher`.
@@ -59,10 +66,11 @@ dotnet run --project src/Launcher.App/Launcher.App.csproj
 ## Структура solution
 
 - `src/Launcher.App` — WPF, ViewModels, команды и composition root;
-- `src/Launcher.Core` — доменные модели, контракты сервисов, URL/nickname validation и RAM policy;
-- `src/Launcher.Infrastructure` — HTTP/JSON, settings, файловые логи, определение физической памяти и интеграция CmlLib.Core;
+- `src/Launcher.Core` — доменные модели, контракты сервисов, координаторы операций, URL/nickname validation и RAM policy;
+- `src/Launcher.Infrastructure` — HTTP/JSON, settings, pack sync, файловые логи/блокировки, CmlLib.Core/guardian, Velopack и Windows services;
 - `tests/Launcher.Core.Tests` — unit-тесты Core и инфраструктурных границ без реального интернета;
-- `docs` — архитектура и Server Protocol v1.
+- `tests/Launcher.App.Tests` — проверки startup ViewModel и WPF WindowChrome;
+- `docs` — единый журнал, архитектура, протоколы, серверный план и release instructions.
 
 Зависимости направлены от App и Infrastructure к Core. Core не зависит от WPF и Windows UI.
 
@@ -125,7 +133,7 @@ https://example.org/launcher/bootstrap.json
 
 ## Запуск игры
 
-Первый запуск может занять продолжительное время: Launcher потоково загружает недостающие pack-файлы, проверяет exact size и SHA-256 и только затем публикует их атомарно. После успешной pack sync CmlLib.Core получает официальные metadata и недостающие файлы Minecraft, assets, libraries и managed Java, после чего устанавливает точную версию Fabric Loader из `profiles.json`. UI показывает реальные файловые и byte-progress события; подготовку можно отменить до старта процесса.
+Первый запуск может занять продолжительное время: Launcher потоково загружает недостающие pack-файлы, проверяет exact size и SHA-256 и только затем атомарно заменяет каждый файл. Полный rollback всего пакета при сбое во время применения не реализован. После успешной pack sync CmlLib.Core получает официальные metadata и недостающие файлы Minecraft, assets, libraries и managed Java, после чего устанавливает точную версию Fabric Loader из `profiles.json`. UI показывает реальные файловые и byte-progress события; подготовку можно отменить до старта процесса.
 
 При следующих запусках существующие файлы проверяются и переиспользуются. Minecraft получает выбранный объём RAM, offline nickname и адрес/порт сервера. Offline-сессия не обходит Microsoft authentication: она подходит только для серверов, чья конфигурация допускает такой вход.
 
