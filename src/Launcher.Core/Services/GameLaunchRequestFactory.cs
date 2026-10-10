@@ -6,9 +6,14 @@ namespace Launcher.Core.Services;
 
 public static class GameLaunchRequestFactory
 {
-    public static GameLaunchRequest Create(GameProfile profile, string nickname, int ramMb)
+    public static GameLaunchRequest Create(
+        GameProfile profile,
+        string nickname,
+        int ramMb,
+        GameLaunchMode mode = GameLaunchMode.Server)
     {
-        if (!ProfileValueValidator.IsValidProfileId(profile.Id) ||
+        if (!Enum.IsDefined(mode) ||
+            !ProfileValueValidator.IsValidProfileId(profile.Id) ||
             !ProfileValueValidator.IsValidVersion(profile.MinecraftVersion) ||
             !ProfileValueValidator.IsValidVersion(profile.LoaderVersion) ||
             !ProfileValueValidator.IsValidServerAddress(profile.ServerAddress))
@@ -51,6 +56,7 @@ public static class GameLaunchRequestFactory
             nickname,
             ramMb,
             profile.ServerAddress,
-            profile.ServerPort);
+            profile.ServerPort,
+            mode);
     }
 }

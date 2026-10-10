@@ -1,12 +1,18 @@
+using System.Diagnostics;
+using System.Text;
 using Launcher.Core.Models;
 using Launcher.Core.Services;
+using Launcher.Infrastructure.Logging;
+using Launcher.Infrastructure.Persistence;
 
 namespace Launcher.Core.Tests;
 
 public sealed class LauncherOperationCoordinatorTests
 {
-    [Fact]
-    public async Task PlayAsync_SynchronizesPackBeforeStartingGame()
+    [Theory]
+    [InlineData(GameLaunchMode.Server)]
+    [InlineData(GameLaunchMode.Singleplayer)]
+    public async Task PlayAsync_SynchronizesPackBeforeStartingGame(GameLaunchMode mode)
     {
         List<string> calls = [];
         FakePackSyncService pack = new((_, _, _) =>
@@ -14,8 +20,9 @@ public sealed class LauncherOperationCoordinatorTests
             calls.Add("pack");
             return Task.FromResult(PackResult());
         });
-        FakeGameLaunchService game = new((_, _, _) =>
+        FakeGameLaunchService game = new((request, _, _) =>
         {
+            Assert.Equal(mode, request.Mode);
             calls.Add("game");
             return Task.FromResult(GameResult());
         });
@@ -23,7 +30,7 @@ public sealed class LauncherOperationCoordinatorTests
 
         await coordinator.PlayAsync(
             Profile(),
-            Request(),
+            Request() with { Mode = mode },
             Progress<PackSyncProgress>(),
             Progress<GameLaunchProgress>(),
             CancellationToken.None);
@@ -31,8 +38,10 @@ public sealed class LauncherOperationCoordinatorTests
         Assert.Equal(["pack", "game"], calls);
     }
 
-    [Fact]
-    public async Task PlayAsync_DoesNotStartGameWhenPackSyncFails()
+    [Theory]
+    [InlineData(GameLaunchMode.Server)]
+    [InlineData(GameLaunchMode.Singleplayer)]
+    public async Task PlayAsync_DoesNotStartGameWhenPackSyncFails(GameLaunchMode mode)
     {
         FakePackSyncService pack = new((_, _, _) => throw new PackSyncException(
             PackSyncError.HashMismatch,
@@ -44,7 +53,7 @@ public sealed class LauncherOperationCoordinatorTests
 
         await Assert.ThrowsAsync<PackSyncException>(() => coordinator.PlayAsync(
             Profile(),
-            Request(),
+            Request() with { Mode = mode },
             Progress<PackSyncProgress>(),
             Progress<GameLaunchProgress>(),
             CancellationToken.None));
@@ -69,8 +78,10 @@ public sealed class LauncherOperationCoordinatorTests
         Assert.Equal(0, game.CallCount);
     }
 
-    [Fact]
-    public async Task ConcurrentPlayAndRepairAreRejected()
+    [Theory]
+    [InlineData(GameLaunchMode.Server)]
+    [InlineData(GameLaunchMode.Singleplayer)]
+    public async Task ConcurrentPlayAndRepairAreRejected(GameLaunchMode mode)
     {
         TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
         TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -84,7 +95,7 @@ public sealed class LauncherOperationCoordinatorTests
         LauncherOperationCoordinator coordinator = new(pack, game, new TestProfileOperationLock());
         Task<(PackSyncResult Pack, GameLaunchResult Game)> play = coordinator.PlayAsync(
             Profile(),
-            Request(),
+            Request() with { Mode = mode },
             Progress<PackSyncProgress>(),
             Progress<GameLaunchProgress>(),
             CancellationToken.None);
@@ -99,8 +110,10 @@ public sealed class LauncherOperationCoordinatorTests
         Assert.False(coordinator.IsActive);
     }
 
-    [Fact]
-    public async Task RemoveManagedFilesAsync_IsRejectedWhilePlayIsActive()
+    [Theory]
+    [InlineData(GameLaunchMode.Server)]
+    [InlineData(GameLaunchMode.Singleplayer)]
+    public async Task RemoveManagedFilesAsync_IsRejectedWhilePlayIsActive(GameLaunchMode mode)
     {
         TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
         TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -116,7 +129,7 @@ public sealed class LauncherOperationCoordinatorTests
             new TestProfileOperationLock());
         Task<(PackSyncResult Pack, GameLaunchResult Game)> play = coordinator.PlayAsync(
             Profile(),
-            Request(),
+            Request() with { Mode = mode },
             Progress<PackSyncProgress>(),
             Progress<GameLaunchProgress>(),
             CancellationToken.None);
@@ -233,8 +246,10 @@ public sealed class LauncherOperationCoordinatorTests
         await activeRepair;
     }
 
-    [Fact]
-    public async Task PlayAsync_HoldsProfileLockUntilMinecraftExits()
+    [Theory]
+    [InlineData(GameLaunchMode.Server)]
+    [InlineData(GameLaunchMode.Singleplayer)]
+    public async Task PlayAsync_HoldsProfileLockUntilMinecraftExits(GameLaunchMode mode)
     {
         TaskCompletionSource gameStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         TaskCompletionSource gameExited = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -254,7 +269,7 @@ public sealed class LauncherOperationCoordinatorTests
             sharedLock);
         Task<(PackSyncResult Pack, GameLaunchResult Game)> activePlay = playing.PlayAsync(
             Profile(),
-            Request(),
+            Request() with { Mode = mode },
             Progress<PackSyncProgress>(),
             Progress<GameLaunchProgress>(),
             CancellationToken.None);
@@ -296,6 +311,68 @@ public sealed class LauncherOperationCoordinatorTests
         Assert.Equal("1.0.0", result.PackVersion);
     }
 
+    [Theory]
+    [InlineData(GameLaunchMode.Server)]
+    [InlineData(GameLaunchMode.Singleplayer)]
+    public async Task PlayAsync_RejectsProfileLockedByAnotherProcess_ThenRecovers(GameLaunchMode mode)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "launcher-mode-process-lock-tests", Guid.NewGuid().ToString("N"));
+        LauncherDataPaths paths = new(directory);
+        FileProfileOperationLock profileLock = new(paths, new NullAppLogger());
+        // Ask the real provider to create/resolve the lock directory first.
+        Assert.True(profileLock.TryAcquire("main", out IDisposable? initialLease));
+        initialLease!.Dispose();
+        string lockPath = Path.Combine(directory, ".locks", "main.lock");
+        string escapedPath = lockPath.Replace("'", "''", StringComparison.Ordinal);
+        string script = $"$lease = [IO.File]::Open('{escapedPath}', [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None); " +
+            "try { [Console]::Out.WriteLine('locked'); [Console]::Out.Flush(); [void][Console]::In.ReadLine() } finally { $lease.Dispose() }";
+        ProcessStartInfo startInfo = new()
+        {
+            FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe"),
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-EncodedCommand");
+        startInfo.ArgumentList.Add(Convert.ToBase64String(Encoding.Unicode.GetBytes(script)));
+        using Process owner = Process.Start(startInfo)!;
+        FakePackSyncService pack = new((_, _, _) => Task.FromResult(PackResult()));
+        FakeGameLaunchService game = new((_, _, _) => Task.FromResult(GameResult()));
+        LauncherOperationCoordinator coordinator = new(pack, game, profileLock);
+        try
+        {
+            Assert.Equal("locked", await owner.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10)));
+            PackSyncException exception = await Assert.ThrowsAsync<PackSyncException>(() => coordinator.PlayAsync(
+                Profile(), Request() with { Mode = mode }, Progress<PackSyncProgress>(), Progress<GameLaunchProgress>(), CancellationToken.None));
+            Assert.Equal(PackSyncError.AlreadyRunning, exception.Error);
+            Assert.Equal(0, pack.CallCount);
+            Assert.Equal(0, game.CallCount);
+            Assert.False(coordinator.IsActive);
+
+            await owner.StandardInput.WriteLineAsync("release");
+            await owner.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(0, owner.ExitCode);
+            await coordinator.PlayAsync(Profile(), Request() with { Mode = mode },
+                Progress<PackSyncProgress>(), Progress<GameLaunchProgress>(), CancellationToken.None);
+            Assert.Equal(1, game.CallCount);
+            Assert.False(coordinator.IsActive);
+        }
+        finally
+        {
+            owner.StandardInput.Close();
+            if (!owner.WaitForExit(5000))
+            {
+                owner.Kill(entireProcessTree: true);
+                await owner.WaitForExitAsync();
+            }
+
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task CancelledOperation_ReleasesProfileLock()
     {
@@ -322,6 +399,87 @@ public sealed class LauncherOperationCoordinatorTests
             Progress<PackSyncProgress>(),
             CancellationToken.None);
         Assert.Equal("1.0.0", result.PackVersion);
+    }
+
+    [Theory]
+    [InlineData(GameLaunchMode.Server)]
+    [InlineData(GameLaunchMode.Singleplayer)]
+    public async Task PlayAsync_FileLockBlocksBothModesAndReleasesAfterCancellation(GameLaunchMode mode)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "launcher-mode-lock-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            LauncherDataPaths paths = new(directory);
+            using CancellationTokenSource cancellation = new();
+            TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            FakeGameLaunchService game = new((_, _, _) => Task.FromResult(GameResult()));
+            LauncherOperationCoordinator first = new(
+                new FakePackSyncService(async (_, _, token) =>
+                {
+                    started.SetResult();
+                    await Task.Delay(Timeout.Infinite, token);
+                    return PackResult();
+                }),
+                game,
+                new FileProfileOperationLock(paths, new NullAppLogger()));
+            LauncherOperationCoordinator second = new(
+                new FakePackSyncService((_, _, _) => Task.FromResult(PackResult())),
+                game,
+                new FileProfileOperationLock(paths, new NullAppLogger()));
+            Task<(PackSyncResult Pack, GameLaunchResult Game)> pending = first.PlayAsync(
+                Profile(), Request() with { Mode = mode }, Progress<PackSyncProgress>(),
+                Progress<GameLaunchProgress>(), cancellation.Token);
+            try
+            {
+                await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                foreach (GameLaunchMode blockedMode in Enum.GetValues<GameLaunchMode>())
+                {
+                    PackSyncException exception = await Assert.ThrowsAsync<PackSyncException>(() => second.PlayAsync(
+                        Profile(), Request() with { Mode = blockedMode }, Progress<PackSyncProgress>(),
+                        Progress<GameLaunchProgress>(), CancellationToken.None));
+                    Assert.Equal(PackSyncError.AlreadyRunning, exception.Error);
+                }
+                Assert.Equal(0, game.CallCount);
+            }
+            finally
+            {
+                cancellation.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+            }
+            Assert.False(first.IsActive);
+            await second.PlayAsync(Profile(), Request() with { Mode = mode }, Progress<PackSyncProgress>(),
+                Progress<GameLaunchProgress>(), CancellationToken.None);
+            Assert.Equal(1, game.CallCount);
+            Assert.False(second.IsActive);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(GameLaunchMode.Server)]
+    [InlineData(GameLaunchMode.Singleplayer)]
+    public async Task PlayAsync_CancellationAfterSyncDoesNotStartGame(GameLaunchMode mode)
+    {
+        using CancellationTokenSource cancellation = new();
+        FakeGameLaunchService game = new((_, _, _) => Task.FromResult(GameResult()));
+        LauncherOperationCoordinator coordinator = new(
+            new FakePackSyncService((_, _, _) =>
+            {
+                cancellation.Cancel();
+                return Task.FromResult(PackResult());
+            }), game, new TestProfileOperationLock());
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.PlayAsync(
+            Profile(), Request() with { Mode = mode }, Progress<PackSyncProgress>(),
+            Progress<GameLaunchProgress>(), cancellation.Token));
+        Assert.Equal(0, game.CallCount);
+        Assert.False(coordinator.IsActive);
     }
 
     private static GameProfile Profile(string id = "main") => new(

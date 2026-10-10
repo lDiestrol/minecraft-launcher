@@ -20,6 +20,26 @@ public sealed class GameLaunchRequestFactoryTests
         Assert.Equal(6144, request.RamMb);
         Assert.Equal("localhost", request.ServerAddress);
         Assert.Equal((ushort)25565, request.ServerPort);
+        Assert.Equal(GameLaunchMode.Server, request.Mode);
+    }
+
+    [Fact]
+    public void Create_SingleplayerPreservesProfileAndSettings()
+    {
+        GameProfile profile = Profile();
+        GameLaunchRequest server = GameLaunchRequestFactory.Create(profile, "Player_1", 6144);
+        GameLaunchRequest singleplayer = GameLaunchRequestFactory.Create(
+            profile, "Player_1", 6144, GameLaunchMode.Singleplayer);
+
+        Assert.Equal(server with { Mode = GameLaunchMode.Singleplayer }, singleplayer);
+    }
+
+    [Fact]
+    public void Create_RejectsUnknownLaunchMode()
+    {
+        GameLaunchException exception = Assert.Throws<GameLaunchException>(
+            () => GameLaunchRequestFactory.Create(Profile(), "Player_1", 4096, (GameLaunchMode)42));
+        Assert.Equal(GameLaunchError.InvalidProfile, exception.Error);
     }
 
     [Theory]

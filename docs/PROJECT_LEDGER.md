@@ -4,11 +4,14 @@
 > Стабильная ветка: `main`; verified commit после `git fetch origin`:
 > `bd98ecd721298981508d54466d11089c1647ab4f`.
 > Стабильная версия — **v0.6.0**. Следующая программная разработка — **v0.6.1**.
-> Исторический полный прогон после исправления WPF/DPI-теста: **252/252 проходят**;
-> в текущей документационной задаче тесты повторно не запускались.
+> Предыдущий локальный полный прогон одиночного запуска: **280/280 проходят**;
+> build — 0 ошибок/предупреждений, format verify — чисто. Реальный Minecraft не запускался.
 > Публичный снимок на 10.10.2026: [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8)
-> объединён в `feat/v0.6.1`; [Draft PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9)
-> открыт из `fix/v061-windowchrome-dpi`, опубликованный head — `e7aafe74d8eb978c346bb033b2ce57d49abdf05a`.
+> и [PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9) объединены в `feat/v0.6.1`.
+> Проверенная интеграционная основа — `52ee0d8d151e7e55327c20376a9678e78b3cc5c1`.
+> Реализация в `feat/v061-singleplayer-launch` подготовлена для независимого Draft-review
+> в `feat/v0.6.1`; актуальные head и PR определяются Git/GitHub (ссылки в разделе 2).
+> На этапе публикации код не менялся, restore/build/test/format повторно не запускались.
 
 ## 1. Назначение и источник состояния
 
@@ -45,8 +48,8 @@ Minecraft Launcher — публичный Windows x64 клиент на .NET 10 
 | Параметр | Проверенное значение |
 | --- | --- |
 | Origin | `https://github.com/lDiestrol/minecraft-launcher.git` |
-| Стабильная ветка | `main`, verified `origin/main` — `bd98ecd721298981508d54466d11089c1647ab4f`; рабочий HEAD документации отслеживается отдельно |
-| Интеграционная ветка | `feat/v0.6.1`, verified `origin/feat/v0.6.1` — `c31c98293cec665c5bffa7022263a4ffc7661bbc`; включает объединённый [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8) |
+| Стабильная ветка | `main`, verified `origin/main` — `bd98ecd721298981508d54466d11089c1647ab4f`; текущий feature HEAD отслеживается отдельно |
+| Интеграционная ветка | `feat/v0.6.1`, verified `origin/feat/v0.6.1` — `52ee0d8d151e7e55327c20376a9678e78b3cc5c1`; включает объединённые [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8) и [PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9) |
 | Verified main | [bd98ecd721298981508d54466d11089c1647ab4f](https://github.com/lDiestrol/minecraft-launcher/commit/bd98ecd721298981508d54466d11089c1647ab4f) |
 | Стабильный release | [v0.6.0](https://github.com/lDiestrol/minecraft-launcher/releases/tag/v0.6.0), GitHub API: `draft=false`, `prerelease=false`, опубликован 09.10.2026 |
 | Release tag/target | [1ae3ae74b1b70d92031fe8706f80f85e506efd56](https://github.com/lDiestrol/minecraft-launcher/commit/1ae3ae74b1b70d92031fe8706f80f85e506efd56) |
@@ -59,17 +62,23 @@ Tag релиза и verified main различаются: после релиз�
 Названия старых feature/release-веток не задают актуальную основу разработки.
 
 Проверенный снимок Git/GitHub на 10.10.2026: `origin/main` — `bd98ecd`,
-`origin/feat/v0.6.1` — `c31c982`, `origin/fix/v061-windowchrome-dpi` — `e7aafe7`,
+`origin/feat/v0.6.1` — `52ee0d8`,
 `origin/release/v0.6.0` — `e426ecb`. [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8)
 объединён в `feat/v0.6.1` с merge commit `c31c982`; [PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9)
-открыт как Draft из `fix/v061-windowchrome-dpi` в `feat/v0.6.1` и не объединён.
+также объединён в `feat/v0.6.1` с merge commit `52ee0d8`.
+Feature-ветка `feat/v061-singleplayer-launch` создана от этой актуальной основы.
+Актуальный head: [ветка на GitHub](https://github.com/lDiestrol/minecraft-launcher/tree/feat/v061-singleplayer-launch);
+независимое review: [PR этой ветки](https://github.com/lDiestrol/minecraft-launcher/pulls?q=is%3Apr+head%3Afeat%2Fv061-singleplayer-launch),
+целевая ветка — `feat/v0.6.1`. Эти ссылки не зависят от заранее неизвестного номера PR
+или собственного SHA публикационного коммита.
 Статусы PR и HEAD изменяемы; перед следующей работой их следует проверить заново.
 
 Согласованная 10.10.2026 Git-стратегия: main сохраняет стабильную v0.6.0;
 промежуточные feature/docs/fix PR объединяются в `feat/v0.6.1` только в рамках
 разрешённой задачи. Полностью завершённая v0.6.1 позже переносится в main одним
-Squash & Merge после явного согласования владельца. Draft PR #9 остаётся отдельным
-исправлением WPF/DPI-теста и документации; merge, tags и Release не выполнялись.
+Squash & Merge после явного согласования владельца. Объединение PR #9 подтверждено
+чтением GitHub API. Для одиночного запуска владелец разрешил один commit, обычный
+push feature-ветки и Draft PR; merge, tags и Release остаются запрещены.
 
 ## 3. Версии и отдельные направления
 
@@ -81,7 +90,7 @@ Squash & Merge после явного согласования владельц
 | 0.4.0-rc.1 / 0.5.0-rc.1 | Исторические release notes | Сохранены в Git; публикация этих RC сейчас отдельно не проверялась |
 | v0.5.0 | Завершён, исторический stable | Tag `v0.5.0`, commit `c0e3990`; основа проверенного ранее installed update |
 | v0.6.0 | Текущий stable, опубликован | Dark Gaming UI, profile file management, locks/guardian, app updates и release tooling |
-| v0.6.1 | Согласован, следующий программный этап | Серверный/одиночный запуск одного профиля, точный RAM, небольшие UX-исправления; сейчас не реализован |
+| v0.6.1 | Частично реализован, не выпущен | Серверный/одиночный запуск одного профиля подготовлен для Draft-review в `feat/v061-singleplayer-launch` → `feat/v0.6.1`; точный RAM и прочая UX-полировка не реализованы в этой задаче |
 | v0.6.2 | Согласован, запланирован после v0.6.1 | Размер данных, безопасное удаление установки профиля, отдельные shared-data операции |
 | Серверный Pack Manager | Отдельный согласованный трек проектирования | Publisher, версионирование клиентских pack, планируемый LXC/NGINX; реализация и deployment не подтверждены |
 | Единая документация агентов | Объединена в `feat/v0.6.1` | [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8) объединён 10.10.2026; merge commit `c31c98293cec665c5bffa7022263a4ffc7661bbc` |
@@ -151,6 +160,17 @@ Server Protocol v1, Pack Manifest v1 и формат settings остаются �
 оба запуска; второй Launcher не запускает тот же профиль; cancellation/exit
 освобождают соответствующие leases без преждевременного снятия защиты игры.
 
+Реализовано 10.10.2026 в `feat/v061-singleplayer-launch`:
+`GameLaunchMode.Server/Singleplayer`, общий `PlayAsync(mode)`, общие settings/instance
+и подготовка. CmlLib получает endpoint только в `Server`; numeric default порта без
+ServerIp не попадает в arguments. Tests проверяют фактические options и ProcessStartInfo
+установленного CmlLib на legacy/QuickPlay metadata, sync/cancellation/exit и команды.
+Обе кнопки помещаются в viewport 900×650 и доступны по Tab; synthetic layout проверен
+при пяти DPI. Подробнее: [game-launch.md](game-launch.md), результаты — раздел 12.
+Реальный Minecraft/menu/world/server smoke ещё не выполнен. Публикация для
+независимого Draft-review согласована отдельно; дальнейшая разработка и merge
+требуют нового разрешения.
+
 ### 5.2. Точный RAM в мегабайтах
 
 - Slider остаётся; рядом появляется числовое поле с точностью 1 МБ.
@@ -184,8 +204,8 @@ keyboard/focus/DPI остаются удобными. Предложение: о
 6. Пройти build/tests/format, ручной smoke обоих режимов, settings/restart,
    release feed и installed update path именно новой версии.
 
-Предложение для review: Core enum/value object `Server`/`Singleplayer`; UI не должен
-управлять CmlLib flags напрямую. Названия типов и разбиение PR пока не зафиксированы.
+В реализации выбран Core enum `GameLaunchMode.Server/Singleplayer`;
+UI не управляет CmlLib flags напрямую. Остальные этапы этого плана не начинались.
 Результаты диагностики и локального исправления WPF-теста приведены ниже;
 они не разрешают произвольное расширение функционального scope v0.6.1.
 
@@ -298,8 +318,10 @@ WindowChrome, IsEnabled, Focusable и действия кнопок сохран
 
 ## 10. Нерешённые вопросы
 
-Перед v0.6.1: проверить CmlLib quick-connect options и полученные arguments обоих
-режимов; место второй кнопки в compact 900×650/DPI; UX clamp/validation при известных
+Перед v0.6.1: провести независимое review и реальный Minecraft smoke обоих режимов
+с выбранным модпаком (server connect, main menu, локальный мир и сохранность данных).
+CmlLib options/arguments и compact 900×650/DPI проверены автоматическими тестами.
+Остаются UX clamp/validation при известных
 RAM min/max; достоверное получение/отображение Velopack channel в installed,
 portable и development mode; разделение сообщений блокировки Play/Repair/Delete.
 
@@ -312,7 +334,7 @@ LXC OS/quota/storage/network/firewall/service credentials; VM lifecycle и healt
 client/server/common mod mapping; authoritative pack version, publisher/reviewer roles,
 storage atomic primitives и требуемый audit export. Детали остаются в отдельном плане.
 
-Прочие вопросы: решение по merge Draft PR #9; portable update UX/E2E;
+Прочие вопросы: portable update UX/E2E;
 code signing и срок; частые реальные диагностические ошибки блокировок.
 Необходимость ADR и машинной release checklist — предложения, не scope v0.6.1.
 
@@ -332,6 +354,9 @@ code signing и срок; частые реальные диагностичес
 | 10.10.2026 | В `fix/v061-windowchrome-dpi` воспроизведён WPF-сбой: отдельный тест 0/1, полный прогон Core 241/241 и App 10/11 (всего 251/252). Причина подтверждена измерением DPI, обратимым переключением rounding в памяти и изолированным layout при пяти DPI; действия всех caption buttons работают. Исходники не менялись, исправление предложено на согласование |
 | 10.10.2026 | Владелец согласовал исправление теста; в той же fix-ветке добавлены строгие проверки заданных размеров и DPI-aware фактических размеров всех трёх кнопок. Restore/build/format успешны, отдельный тест 1/1, полный прогон 252/252 без пропусков; compiled helper проверен на пяти DPI и двух смешанных X/Y масштабах. На момент завершения этого локального этапа были изменены только тест и Ledger, публикация ещё не выполнялась |
 | 10.10.2026 | GitHub подтвердил последующее объединение [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8) в `feat/v0.6.1` (`c31c982`) и публикацию исправления теста в [Draft PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9) (`e7aafe7`, `fix/v061-windowchrome-dpi` → `feat/v0.6.1`). Независимое review подтвердило реализацию DPI-aware проверки и выявило P2: Ledger сохранял предпубликационные формулировки как текущие; эта документационная задача исправляет разделение истории и актуального снимка |
+| 10.10.2026 | При подготовке одиночного запуска fetch/GitHub API подтвердили дальнейший merge [PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9), интеграционный baseline `52ee0d8`. На старте дерево было чистым; создана `feat/v061-singleplayer-launch` от актуальной `origin/feat/v0.6.1`. Main/release не менялись |
+| 10.10.2026 | По отдельному разрешению реализованы два режима одного профиля, общие launch pipeline/settings/instance и вторая кнопка. Добавлены проверки CmlLib options/arguments, обоих режимов sync/locks/cancel/exit/commands и compact/DPI/Tab. Restore/build/format успешны; Core 261/261 + App 19/19 = 280/280. На первоначальном локальном этапе commit/push/PR ещё не выполнялись; работа была остановлена для согласования публикации |
+| 10.10.2026 | Затем владелец согласовал публикацию одним коммитом `feat: add singleplayer launch mode`, push `feat/v061-singleplayer-launch` и Draft PR в `feat/v0.6.1` для независимого review. Fetch повторно подтвердил baseline `52ee0d8`; проверены полный diff и три новых файла. Код и тесты на этом этапе не менялись, результаты 280/280/build/format относятся к предыдущему прогону. Состояние публикации определяется по ссылкам на ветку/PR в разделе 2; merge, tag/release и продолжение v0.6.1 не разрешены |
 
 SHA собственных документационных коммитов в Ledger не записываются;
 их следует проверять по Git и истории PR.
@@ -377,10 +402,11 @@ SHA собственных документационных коммитов в 
 выполнялись диагностическими командами в памяти, новых тест-кейсов/файлов не добавлено.
 Версия, зависимости, MainWindow.xaml и UseLayoutRounding приложения не менялись.
 После этого исторического локального этапа commit/push и создание Draft PR #9 были выполнены;
-merge не выполнялся. GitHub checks для опубликованного head отсутствуют, поэтому 252/252 —
+на этапе публикации merge не выполнялся (последующее объединение отражено выше).
+В том снимке GitHub checks для опубликованного head отсутствовали, поэтому 252/252 —
 результат предыдущего локального прогона, а не подтверждение CI.
 
-Текущая документационная проверка, 10.10.2026:
+Историческая документационная проверка до merge PR #9, 10.10.2026:
 
 | Проверка | Результат |
 | --- | --- |
@@ -390,15 +416,48 @@ merge не выполнялся. GitHub checks для опубликованно
 | Тесты | Не запускались: код не менялся; 252/252 относятся к предыдущему локальному прогону исправления WPF/DPI-теста |
 | Документация | Markdown-структура и относительные ссылки корректны; проверка секретов/приватных адресов и `git diff --check` прошла; diff содержит только `AGENTS.md` и Ledger |
 
+Предыдущие локальные проверки этапа реализации одиночного запуска, 10.10.2026:
+
+| Проверка | Результат |
+| --- | --- |
+| Git/fetch/GitHub | На том локальном этапе fetch успешен с разрешённым доступом; `origin/feat/v0.6.1` и HEAD feature-ветки — `52ee0d8`; `origin/main` — `bd98ecd`, release-ветка — `e426ecb`. PR #8/#9 merged; до согласования публикации изменения оставались локальными |
+| `dotnet restore MinecraftLauncher.sln` | Успешно с разрешённым доступом к пользовательскому NuGet.Config/cache; sandbox-попытка отказала в доступе |
+| `dotnet build MinecraftLauncher.sln --no-restore` | 0 warnings, 0 errors |
+| `dotnet test MinecraftLauncher.sln --no-build --no-restore` | Core 261/261, App 19/19; всего 280 passed, 0 failed, 0 skipped (28 новых cases относительно baseline) |
+| Целевые проверки | CmlLib options и фактические legacy/QuickPlay process arguments; профиль/settings; sync-before-launch и failure; cancellation до launch; exit 0/7; IsBusy/Play/Singleplayer/Repair/Delete/update команды |
+| Межпроцессная защита | Отдельный PowerShell-процесс удерживает profile lock: оба режима не доходят до sync, после выхода lock-owner запускаются. Дополнительно проверены два независимых file-lock provider, отмена и освобождение lease. Существующие guardian/shared-lock/SHA-256/disk-space/update tests проходят |
+| WPF UI | Реальное окно 900×650 на текущем DPI 150%: кнопки видимы в viewport, привязаны к нужным командам, Focusable/Tab работают; caption-button DPI-aware размеры и действия сохранены |
+| Multi-DPI | Реальный dashboard измерен в изолированном layout через SetRootDpi при 100/125/150/175/200%; native смена мониторов/DPI не выполнялась. Test fixture загружает production theme без production startup/network/settings writes |
+| `dotnet format MinecraftLauncher.sln --verify-no-changes --no-restore` | Успешно, exit 0 после нормализации CRLF новых файлов и удаления лишнего using; проверка не меняет файлы |
+| Документация/scope | Обновлены только Ledger/game-launch; текст планов разделов 6–7 сохранён без изменений. Markdown/UTF-8/fences/таблицы корректны, 29 внутренних файловых ссылок проверены; `git diff --check` прошёл |
+| Реальный smoke/packaging | Java/Minecraft не запускались, реальный серверный вход/main menu/world не проверены; installed update/release packaging E2E не выполнялись |
+
+Новые тесты process arguments используют настоящий установленный CmlLib 4.0.6,
+но синтетическую version metadata; они не доказывают совместимость реального pack
+с одиночным миром. Существующие process/guardian tests запускают тестовые процессы,
+не Minecraft. Полная v0.6.1 не считается готовой к выпуску по этому локальному прогону.
+
+Проверки этапа публикации для независимого review, 10.10.2026:
+
+| Проверка | Результат |
+| --- | --- |
+| Git/baseline | Fetch успешен с разрешённым доступом; до публикационного commit HEAD и merge-base с `origin/feat/v0.6.1` совпадают с `52ee0d8`. Main/release не меняются |
+| Полный diff/scope | Проверены 14 файлов, включая три новых; только согласованные Core/Infrastructure/UI, тесты и Ledger/game-launch. Бинарные артефакты, диагностические результаты, секреты и случайные файлы не добавляются |
+| Код и предыдущие результаты | Код/тесты не менялись после предыдущего успешного прогона. Restore/build/280 тестов/format не повторялись; это не новый CI или E2E результат |
+| Документация | Публикационные формулировки актуализированы; Markdown/UTF-8/fences/таблицы и 29 внутренних ссылок проверены, `git diff --check` прошёл. Планы v0.6.2/Pack Manager не менялись |
+| Ограничения | Реальный Minecraft smoke, packaging и installed update E2E не выполнялись; перечислены в описании Draft PR. После публикации работа останавливается для независимого review |
+
 ## 13. Следующие действия и миграция документов
 
-1. Проверить исправление P2 и актуальный head в Draft PR #9; решение о merge в
-   `feat/v0.6.1` принимается отдельно. `main` и `release/v0.6.0` не менять.
-2. После согласованного merge PR #9 синхронизировать рабочие копии на других машинах
-   и заново проверить remote/branch/HEAD. Старые status/roadmap/handoff сохранять
+1. Выполнить независимое review Draft PR `feat/v061-singleplayer-launch` →
+   `feat/v0.6.1` (ссылка на PR ветки в разделе 2); merge — только после отдельного разрешения.
+   `main` и `release/v0.6.0` не менять.
+2. Проверить реальный smoke обоих режимов с выбранным профилем, совместимость pack
+   и сохранность worlds/settings. Рабочие копии других машин синхронизировать с
+   повторной проверкой remote/branch/HEAD; старые status/roadmap/handoff сохранять
    до отдельного согласования удаления.
-3. После отдельного согласования начать программную задачу v0.6.1: launch mode,
-   затем RAM и UX; версию приложения менять только в отдельной release preparation.
+3. Точный RAM и прочую UX-полировку v0.6.1 реализовывать отдельными согласованными
+   задачами; версию приложения менять только в отдельной release preparation.
 4. После v0.6.1 проектировать v0.6.2; Pack Manager вести отдельными design/implementation PR.
 
 Информация [PROJECT_STATUS.md](PROJECT_STATUS.md), [ROADMAP.md](ROADMAP.md) и
