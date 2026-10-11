@@ -21,6 +21,9 @@ internal static class InstallationCrashHost
         InstallationIntent intent = new(1, 1, owner.Id, owner.StartTime.ToUniversalTime().Ticks,
             Guid.NewGuid().ToString("N"), args[2], args[3], args[4]);
         InstallationIntentStore.Write(resolver.ControlDirectory, intent);
+        string receipt = Path.Combine(resolver.ControlDirectory, "installation-record");
+        Directory.CreateDirectory(receipt);
+        InstallationIntentStore.Write(receipt, intent);
         resolver.ConfigureNewRootUnderLease(args[3]);
         string marker = args[6];
         if (args[5] == "intent") await Gate("0");

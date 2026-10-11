@@ -182,7 +182,9 @@ helper должен преобразовать их в диагностичес�
 выбранном локальном томе. Legacy/configured GameData остаётся прежним, без миграции.
 Непустой неизвестный App и unmanaged legacy App отвергаются; in-place обновление
 такой v0.6.0 установки в этой API не реализовано. Receipt в Control фиксирует владение
-путями, но не является подтверждением успеха: фактический layout проверяется отдельно.
+путями, но не является подтверждением успеха: отдельно проверяются layout, HKCU и completion.
+Staging и GameData не могут совпадать или содержать друг друга; canonical/reparse проверки
+выполняются до intent/locator и повторяются под installation lease.
 
 Coordinator удерживает exclusive `storage-root.lock` на весь critical section и
 повторяет preflight под lease. Он использует существующий resolver и game activity checks,
@@ -198,14 +200,29 @@ atomic JOB_LIST, explicit HANDLE_LIST с query-only witness, **KILL_ON_JOB_CLOSE
 прежнего owner (либо повторной операции того же owner) и отсутствия активных процессов Job.
 Missing Job допускает recovery только для проверенного install-contract1 с kill-on-close;
 это правило не применяется к Minecraft intent3/witness1. Unknown/corrupt/access-denied
-state остаётся fail-closed. Таймаут не разрешает очистку intent.
+state остаётся fail-closed. Таймаут не разрешает очистку intent. Recovery не удаляет gate:
+intent сохраняется до подтверждённого Complete либо атомарно заменяется новой попыткой.
+Receipt и pending intent должны точно совпадать по token, owner PID/start time, paths,
+package hash и версиям контрактов. Связанная завершённая операция подтверждается completion.
+Только при такой связи допускаются соседние backup/чужие элементы base; они не принимаются
+во владение, не перемещаются и не удаляются. App.* без связи ничего не разрешает;
+reparse siblings отвергаются. Строгая проверка чистой установки сохраняется.
 
 Setup получает `--silent --installto App --log staging/setup.log`, TEMP/TMP на выбранном
 томе. Cancellation/15-minute execution budget прекращают только созданный installer Job;
 intent/locator сохраняются до проверяемого retry. Нет удаления GameData или rollback.
 После exit0 проверяются current files, manifest identity/version/channel/MainExe/x64,
-trusted Update hash, установленный full package и configured root. Только verified
-результат снимает gate. Идемпотентный verified retry не запускает Setup повторно.
+trusted Update hash, установленный full package и configured root. Отдельно проверяется
+HKCU uninstall key точного PackId: canonical InstallLocation/DisplayIcon, короткая
+major.minor.patch версия Setup161, title/authors из доверенного manifest, команды удаления
+точного Update.exe и обязательные поля регистрации. Чужой registered App не заменяется.
+Отсутствие необязательных пользовательских shortcuts не считается повреждением.
+После успешного native exit0, ActiveProcesses=0 и обеих проверок атомарно записывается
+`installation-completion/installation-intent.json` в Control (та же строгая schema1,
+но отдельная семантика успешного завершения, не предварительного receipt). Completion
+должен совпадать с receipt и текущим pending intent; новая попытка не принимает старый token.
+Только эта тройная проверка снимает gate. Crash до completion требует повторного Setup,
+даже при полных файлах/HKCU; crash после completion допускает verified retry без Setup.
 Unique staging/logs сохраняются для диагностики; автоматической рекурсивной очистки нет.
 
 До VelopackApp.Run `InstallationStartupGuard.TryAcquireVelopackStartup()` выдаёт shared
@@ -215,6 +232,12 @@ Control lease, удерживаемый Program.Main до завершения S
 pending intent не инициирует SDK writes и получает существующую storage startup error.
 Оба игровых режима, guardian/JVM contract, UI/RAM и updater source не изменены.
 SDK update-download fallback при unwritable App пока не устранён: см. [releasing.md](releasing.md).
+
+При повреждении/несовпадении служебных записей автоматическое восстановление запрещено.
+В частности, crash между отдельными атомарными записями intent и receipt может потребовать
+проверки метаданных. Это fail-closed, не транзакция сразу нескольких файлов. Безопасный
+порядок обслуживания описан в [releasing.md](releasing.md); нет команды удаления gate,
+таймаутной очистки или принятия неизвестного App.
 
 ## Release packaging
 

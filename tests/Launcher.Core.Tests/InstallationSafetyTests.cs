@@ -248,7 +248,14 @@ public sealed class InstallationSafetyTests
         Assert.Equal(StorageRootError.Busy, Assert.Throws<StorageRootException>(() => box.Resolver.OpenSession()).Error);
         Assert.False(InstallationStartupGuard.CanInitializeVelopack([], box.Resolver.ControlDirectory));
         Assert.False(InstallationStartupGuard.CanInitializeVelopack(["--veloapp-install", "0.6.0"], box.Resolver.ControlDirectory));
-        using (IDisposable lease = box.Backend.AcquireLease()) box.Backend.Recover(plan);
+        using (IDisposable lease = box.Backend.AcquireLease())
+        {
+            box.Backend.Recover(plan);
+            Assert.Equal(StorageRootError.Busy, Assert.Throws<StorageRootException>(() => box.Resolver.OpenSession()).Error);
+            box.CreateInstalledLayout(plan);
+            box.ConfirmSuccessfulSetup(plan);
+            box.Backend.Complete(plan);
+        }
         using StorageRootSession session = box.Resolver.OpenSession();
         Assert.Equal(plan.GameDataDirectory, session.Paths.RootDirectory);
         Assert.ThrowsAny<IOException>(() => box.Backend.AcquireLease());
@@ -283,6 +290,9 @@ public sealed class InstallationSafetyTests
         box.Backend.ConfigureStorage(plan);
         Assert.False(box.Backend.IsVerified(plan));
         box.CreateInstalledLayout(plan);
+        Assert.True(box.Backend.IsAppVerified(plan));
+        Assert.False(box.Backend.IsVerified(plan));
+        box.ConfirmSuccessfulSetup(plan);
         Assert.True(box.Backend.IsVerified(plan));
         box.Backend.Complete(plan);
         Assert.False(File.Exists(InstallationIntentStore.PathFor(box.Resolver.ControlDirectory)));
@@ -298,6 +308,7 @@ public sealed class InstallationSafetyTests
         public string Application => Path.Combine(Directory, "helper");
         public StorageRootResolver Resolver => new(LocalData, Application);
         public WindowsInstallationBackend Backend { get; }
+        public InstallationRegistration? Registration { get; set; }
         public InstallationRequest Request { get; }
         private const string Manifest = "<package><metadata><id>lDiestrol.MinecraftLauncher</id><version>0.6.0</version><channel>stable</channel><mainExe>MinecraftLauncher.exe</mainExe><machineArchitecture>x64</machineArchitecture></metadata></package>";
         public Sandbox()
@@ -313,8 +324,29 @@ public sealed class InstallationSafetyTests
                 Add(archive, "lib/app/library.dll", "library-fixture");
             }
             Request = new(Base, "user", new(setup, Hash(setup), package, Hash(package), Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("updater-fixture"))), "0.6.0", "stable"));
-            Backend = new(LocalData, Application, () => "user", (_, _) => true);
+            Backend = new(LocalData, Application, () => "user", (_, _) => true, registration: () => Registration);
         }
+        public void ConfirmSuccessfulSetup(InstallationPlan plan)
+        {
+            Registration = ValidRegistration(plan);
+            Backend.RecordSuccessfulSetup(plan, 0, 0);
+        }
+        public static InstallationRegistration ValidRegistration(InstallationPlan plan) => new(WindowsInstallationBackend.PackId,
+            new Dictionary<string, object?>
+            {
+                ["InstallLocation"] = plan.AppDirectory,
+                ["DisplayIcon"] = Path.Combine(plan.AppDirectory, "current", WindowsInstallationBackend.MainExe),
+                ["DisplayName"] = WindowsInstallationBackend.PackId,
+                ["DisplayVersion"] = plan.Payload.Version.Split(['-', '+'])[0],
+                ["Publisher"] = "",
+                ["InstallDate"] = "20261012",
+                ["UninstallString"] = $"\"{Path.Combine(plan.AppDirectory, "Update.exe")}\" --uninstall",
+                ["QuietUninstallString"] = $"\"{Path.Combine(plan.AppDirectory, "Update.exe")}\" --uninstall --silent",
+                ["EstimatedSize"] = 1,
+                ["NoModify"] = 1,
+                ["NoRepair"] = 1,
+                ["Language"] = 0x0409,
+            });
         public void CreateInstalledLayout(InstallationPlan plan)
         {
             string current = Path.Combine(plan.AppDirectory, "current");
@@ -325,7 +357,7 @@ public sealed class InstallationSafetyTests
             File.WriteAllText(Path.Combine(plan.AppDirectory, "Update.exe"), "updater-fixture");
             string packages = Path.Combine(plan.AppDirectory, "packages");
             System.IO.Directory.CreateDirectory(packages);
-            File.Copy(Request.Payload.FullPackageFile, Path.Combine(packages, Path.GetFileName(Request.Payload.FullPackageFile)));
+            File.Copy(Request.Payload.FullPackageFile, Path.Combine(packages, Path.GetFileName(Request.Payload.FullPackageFile)), overwrite: true);
         }
         private static void Add(ZipArchive archive, string name, string text)
         {

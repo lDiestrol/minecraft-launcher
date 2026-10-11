@@ -53,7 +53,19 @@ public sealed class InstallationCrashTests
             {
                 Assert.False(File.Exists(marker + ".ready"));
             }
-            using (IDisposable lease = await AcquireAfterOwnerRundown(box.Backend)) box.Backend.Recover(plan);
+            using (IDisposable lease = await AcquireAfterOwnerRundown(box.Backend))
+            {
+                box.Backend.Recover(plan);
+                Assert.True(File.Exists(InstallationIntentStore.PathFor(box.Resolver.ControlDirectory)));
+                Assert.False(box.Backend.IsVerified(plan));
+                Assert.False(InstallationStartupGuard.CanInitializeVelopack([], box.Resolver.ControlDirectory));
+                // Simulated successful retry publication, NOT an actual vendor Setup in this crash harness.
+                box.Backend.Prepare(plan);
+                box.Backend.ConfigureStorage(plan);
+                box.CreateInstalledLayout(plan);
+                box.ConfirmSuccessfulSetup(plan);
+                box.Backend.Complete(plan);
+            }
             using StorageRootSession session = box.Resolver.OpenSession();
             Assert.Equal(plan.GameDataDirectory, session.Paths.RootDirectory);
             Assert.False(File.Exists(InstallationIntentStore.PathFor(box.Resolver.ControlDirectory)));

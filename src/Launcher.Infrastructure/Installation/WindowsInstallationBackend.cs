@@ -6,7 +6,6 @@ using System.Security.Principal;
 using System.Xml;
 using System.Xml.Linq;
 using Launcher.Infrastructure.Persistence;
-using Microsoft.Win32;
 
 namespace Launcher.Infrastructure.Installation;
 
@@ -19,19 +18,22 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
     private readonly Func<long, string, bool> _hasSpace;
     private readonly Func<string> _identity;
     private readonly bool _inspectRegistration;
+    private readonly Func<InstallationRegistration?> _registration;
 
     public WindowsInstallationBackend() : this(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         AppContext.BaseDirectory, CurrentUserSid, (bytes, volume) => new DriveInfo(volume).AvailableFreeSpace >= bytes, true)
     { }
 
     internal WindowsInstallationBackend(string localData, string executionDirectory, Func<string> identity,
-        Func<long, string, bool> hasSpace, bool inspectRegistration = false)
+        Func<long, string, bool> hasSpace, bool inspectRegistration = false,
+        Func<InstallationRegistration?>? registration = null)
     {
         _localData = localData;
         _executionDirectory = executionDirectory;
         _identity = identity;
         _hasSpace = hasSpace;
         _inspectRegistration = inspectRegistration;
+        _registration = registration ?? (() => InstallationRegistration.Read(PackId));
     }
 
     private StorageRootResolver Resolver(string? app = null) => new(_localData, app ?? _executionDirectory);
@@ -52,11 +54,13 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
             throw Error(InstallationError.Identity, "Установщик и помощник запущены под разными пользователями.");
         string root = Normalize(request.BaseDirectory);
         string app = Path.Combine(root, "App");
+        string staging = Normalize(Path.Combine(root, ".launcher-install"));
         string game = inspection.ConfiguredGameData ?? (inspection.HasLegacyData ? Resolver().LegacyRootDirectory : Path.Combine(root, "GameData"));
         game = Normalize(game);
         if (File.Exists(game) || inspection.ConfiguredGameData is not null && !Directory.Exists(game))
             throw Error(InstallationError.Unavailable, "Сохранённый каталог игровых данных недоступен. Подключите диск и восстановите доступ; другой каталог не выбран.");
         RejectOverlap(app, game);
+        RejectOverlap(staging, game);
         RejectOverlap(root, Resolver().ControlDirectory);
         foreach (Environment.SpecialFolder folder in new[] { Environment.SpecialFolder.Windows,
                      Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86, Environment.SpecialFolder.CommonApplicationData })
@@ -76,15 +80,30 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
             !volume.Equals(Path.GetPathRoot(game), StringComparison.OrdinalIgnoreCase))
             throw Error(InstallationError.UnsafePath, "App и новые игровые данные должны находиться на одном томе.");
         InstallationIntent? receipt = ReadReceipt();
+        string? registeredApp = RegisteredApp();
+        if (!string.IsNullOrEmpty(registeredApp) && !Same(Normalize(registeredApp), app))
+            throw Error(InstallationError.ExistingInstallation, "HKCU указывает на другую установку этого продукта. Чужая регистрация и App не заменяются.");
+        InstallationIntent? pending = InstallationIntentStore.Read(Resolver().ControlDirectory);
+        InstallationIntent? completion = ReadCompletion();
+        bool linkedOperation = receipt is not null && (SameOperation(receipt, pending) || SameOperation(receipt, completion));
+        if (pending is not null && !SameOperation(receipt, pending))
+            throw Error(InstallationError.Recovery, "Intent и запись владения не совпадают. Данные сохранены; требуется проверка служебных записей без удаления App или backup.");
         if (inspection.HasLegacyApp && receipt is null)
             throw Error(InstallationError.ExistingInstallation, "Обнаружена существующая установка без установочной записи. Её данные сохранены; создание второй установки или автоматический перенос запрещены.");
         if (receipt is not null && (!Same(receipt.AppDirectory, app) || !Same(receipt.GameDataDirectory, game)))
             throw Error(InstallationError.ExistingInstallation, "Другая установка уже зарегистрирована. Перенос каталога не поддерживается.");
         if (HasData(app) && receipt is null)
             throw Error(InstallationError.ExistingInstallation, "Непустой App не принадлежит этой установке; его содержимое не будет заменено.");
-        if (Directory.Exists(root) && Directory.EnumerateFileSystemEntries(root).Any(entry =>
-                !Same(entry, app) && !Same(entry, game) && !Path.GetFileName(entry).Equals(".launcher-install", StringComparison.Ordinal)))
-            throw Error(InstallationError.ExistingInstallation, "Выбранная папка содержит посторонние файлы.");
+        if (Directory.Exists(root))
+        {
+            foreach (string entry in Directory.EnumerateFileSystemEntries(root))
+            {
+                StoragePathPolicy.EnsureNoReparsePoints(entry);
+                if (!Same(entry, app) && !Same(entry, game) && !Same(entry, staging) && !linkedOperation)
+                    throw Error(InstallationError.ExistingInstallation, "Выбранная папка содержит посторонние файлы. Неизвестные каталоги, включая App.*, не принимаются и не удаляются.");
+                // An authenticated retry may leave vendor backups/foreign siblings alone. Setup only owns App.
+            }
+        }
         if (inspection.ConfiguredGameData is null && !inspection.HasLegacyData && HasData(game))
             throw Error(InstallationError.ExistingInstallation, "Непустой GameData не будет автоматически принят или перенесён.");
         long extracted = ValidatePayload(request.Payload, app, game);
@@ -97,7 +116,7 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
         ProbeNearest(root);
         ProbeNearest(game);
         foreach (string path in new[] { app, Path.Combine(app, "packages"), Path.Combine(app, "packages", "VelopackTemp") }) ProbeNearest(path);
-        return new(root, app, game, Path.Combine(root, ".launcher-install"), required, request.Payload);
+        return new(root, app, game, staging, required, request.Payload);
     }
 
     public IDisposable AcquireLease() => Resolver().AcquireInstallationLease();
@@ -106,6 +125,8 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
     {
         InstallationIntent? state = InstallationIntentStore.Read(Resolver().ControlDirectory);
         if (state is null) return;
+        if (!SameOperation(ReadReceipt(), state))
+            throw Error(InstallationError.Recovery, "Незавершённая операция не подтверждена записью владения; автоматическое восстановление запрещено.");
         if (!Same(state.AppDirectory, plan.AppDirectory) || !Same(state.GameDataDirectory, plan.GameDataDirectory) ||
             !state.PackageSha256.Equals(plan.Payload.PackageSha256, StringComparison.OrdinalIgnoreCase))
             throw Error(InstallationError.Recovery, "Незавершённая установка относится к другому пути или пакету. Автоматический откат запрещён.");
@@ -117,11 +138,13 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
             throw Error(InstallationError.Busy, "Установочные процессы ещё работают. Повторите проверку после их завершения.");
         // Missing job is safe ONLY for install contract v1: atomic JOB_LIST + KILL_ON_JOB_CLOSE.
         // This rule must never be applied to the Minecraft job / JVM witness contract.
-        InstallationIntentStore.Delete(Resolver().ControlDirectory);
+        // Keep the gate and operation identity until verified completion, or atomically replace it in Prepare.
     }
 
     public void Prepare(InstallationPlan plan)
     {
+        RejectOverlap(plan.StagingDirectory, plan.GameDataDirectory);
+        StoragePathPolicy.EnsureNoReparsePoints(plan.StagingDirectory);
         using Process owner = Process.GetCurrentProcess();
         InstallationIntent state = new(1, 1, owner.Id, owner.StartTime.ToUniversalTime().Ticks,
             Guid.NewGuid().ToString("N"), plan.AppDirectory, plan.GameDataDirectory, plan.Payload.PackageSha256);
@@ -169,9 +192,19 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
         }
         if (setup.ExitCode != 0)
             throw Error(InstallationError.Setup, $"Установщик завершился с кодом {setup.ExitCode}. Игровые данные и указатель сохранены.");
+        RecordSuccessfulSetup(plan, setup.ExitCode, job.ActiveProcesses);
     }
 
     public bool IsVerified(InstallationPlan plan)
+    {
+        InstallationIntent? receipt = ReadReceipt();
+        InstallationIntent? completion = ReadCompletion();
+        InstallationIntent? pending = InstallationIntentStore.Read(Resolver().ControlDirectory);
+        return receipt is not null && MatchesPlan(receipt, plan) && SameOperation(receipt, completion) &&
+            (pending is null || SameOperation(pending, completion)) && IsAppVerified(plan) && IsRegistrationVerified(plan);
+    }
+
+    internal bool IsAppVerified(InstallationPlan plan)
     {
         if (!Directory.Exists(plan.AppDirectory)) return false;
         try
@@ -228,6 +261,37 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
         InstallationIntentStore.Delete(Resolver().ControlDirectory);
         // Keep unique staging/logs for diagnosis. No recursive deletion of App, GameData or backups.
     }
+
+    internal bool IsRegistrationVerified(InstallationPlan plan)
+    {
+        _identity(); // Recheck non-elevated/non-impersonated identity before reading HKCU.
+        using FileStream package = SafeLeafFile.OpenRead(plan.Payload.FullPackageFile);
+        using ZipArchive archive = new(package, ZipArchiveMode.Read);
+        using Stream manifest = archive.Entries.Single(entry => entry.FullName.EndsWith(".nuspec", StringComparison.Ordinal)).Open();
+        using XmlReader reader = XmlReader.Create(manifest, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null });
+        XElement metadata = XDocument.Load(reader).Descendants().Single(element => element.Name.LocalName == "metadata");
+        string Value(string name) => metadata.Elements().SingleOrDefault(element => element.Name.LocalName == name)?.Value ?? "";
+        string title = Value("title");
+        return _registration()?.Matches(PackId, plan.AppDirectory, MainExe, plan.Payload.Version,
+            string.IsNullOrEmpty(title) ? PackId : title, Value("authors")) == true;
+    }
+
+    // Called only after successful native Setup exit AND installer-tree rundown. Tests simulate that boundary explicitly.
+    internal void RecordSuccessfulSetup(InstallationPlan plan, int exitCode, uint activeProcesses)
+    {
+        InstallationIntent? state = InstallationIntentStore.Read(Resolver().ControlDirectory);
+        if (exitCode != 0 || activeProcesses != 0 || state is null || !MatchesPlan(state, plan) || !SameOperation(ReadReceipt(), state) ||
+            !IsAppVerified(plan) || !IsRegistrationVerified(plan))
+            throw Error(InstallationError.Verification, "Setup, файлы или HKCU-регистрация не подтверждены. Установка остаётся незавершённой; требуется безопасная повторная попытка.");
+        WriteRecord("installation-completion", state);
+    }
+
+    private static bool MatchesPlan(InstallationIntent state, InstallationPlan plan) =>
+        Same(state.AppDirectory, plan.AppDirectory) && Same(state.GameDataDirectory, plan.GameDataDirectory) &&
+        Same(state.PackageSha256, plan.Payload.PackageSha256);
+
+    private static bool SameOperation(InstallationIntent? first, InstallationIntent? second) => first is not null && second is not null &&
+        first == second; // Includes token, owner PID/start ticks, paths, package and contract versions.
 
     private long ValidatePayload(InstallationPayload payload, string app, string game)
     {
@@ -294,8 +358,13 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
     }
 
     private void WriteReceipt(InstallationIntent state)
+        => WriteRecord("installation-record", state);
+
+    private InstallationIntent? ReadCompletion() => InstallationIntentStore.Read(Path.Combine(Resolver().ControlDirectory, "installation-completion"));
+
+    private void WriteRecord(string name, InstallationIntent state)
     {
-        string directory = Path.Combine(Resolver().ControlDirectory, "installation-record");
+        string directory = Path.Combine(Resolver().ControlDirectory, name);
         StoragePathPolicy.EnsureNoReparsePoints(directory);
         Directory.CreateDirectory(directory);
         InstallationIntentStore.Write(directory, state);
@@ -304,8 +373,7 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
     private string? RegisteredApp()
     {
         if (!_inspectRegistration || !OperatingSystem.IsWindows()) return null;
-        using RegistryKey? key = Registry.CurrentUser.OpenSubKey($@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{PackId}");
-        return key?.GetValue("InstallLocation") as string;
+        return _registration()?.Values.GetValueOrDefault("InstallLocation") as string;
     }
 
     private static string CurrentUserSid()

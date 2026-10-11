@@ -109,8 +109,63 @@ intent. Прерванную операцию повторяют с теми ж�
 Нет автоматического удаления App/GameData, миров, backup или rollback locator.
 Повреждённый/unknown intent, живой owner/Job и access-denied остаются заблокированы.
 Execution timeout/cancel останавливают только новый installer tree и не подтверждают успех.
-Успех — проверенный installed layout/root, не один exit0. Pending gate блокирует обычный
+Успех — проверенные installed layout/root, обязательная HKCU-регистрация и durable
+completion успешного native Setup после exit0/installer-tree rundown, не предварительный
+receipt и не один exit0. Recovery не снимает pending gate до этой проверки. Pending gate блокирует обычный
 SDK startup; отдельный install hook допускается только внутри соответствующего Job.
+
+### Исправления ревью PR #13, 12.10.2026
+
+Staging/GameData overlap отвергается до intent/locator, включая equal/ancestor/descendant,
+и повторно под lease. Полные файлы без HKCU/completion требуют повторного Setup, не
+AlreadyInstalled. Registry verifier сверяет точный PackId/App, manifest title/authors,
+major.minor.patch DisplayVersion, точные Update uninstall commands и обязательные поля.
+Пользовательские shortcuts необязательны. Чужой registered App получает безопасный отказ.
+
+Velopack161 переименовывает непустой App в App.<random16>; best-effort backup cleanup
+может не завершиться. Порядок подтверждён pinned [Setup161 source](https://github.com/velopack/velopack/blob/1.2.161/src/bins/src/commands/install.rs),
+поля HKCU — [registry161 source](https://github.com/velopack/velopack/blob/1.2.161/src/bins/src/windows/registry.rs).
+Для точно связанных receipt/intent либо receipt/completion retry
+доступен с оставшимися обычными siblings. Ни backup, ни чужие siblings не становятся
+managed-файлами и не удаляются. Чистая установка остаётся строгой, App.* сам по себе
+не доказывает ownership, reparse siblings запрещены.
+
+В новом ignored lab `artifacts/install-review-20261012` создан отдельный diagnostic
+PackId `MinecraftLauncher.InstallReview.20261012`, SDK/vpk161, win-x64, dev0.0.1, без
+shortcuts. Настоящий Setup запущен production WindowsInstallationJob, helper paused в
+install hook после распаковки, но до HKCU. Принудительное завершение installer tree
+оставило полный layout без регистрации; повторная авария после vendor rename оставила
+rollback siblings. Следующий Setup с открытым no-delete handle тестового backup завершился
+exit0, backup остался, production registry verifier принял реальную регистрацию.
+Diagnostic uninstall exit0 удалил только diagnostic App/HKCU; retained backups, источники
+и logs оставлены. Контрольные world/locator SHA256 неизменны.
+
+Это component/vendor fault-injection, не production Coordinator E2E: diagnostic PackId
+не принимается hardcoded Launcher backend. Переход immediately-after-rename не пойман:
+повторная авария выполнена позже, в install hook. Реальный ACL отказ записи HKCU не
+инъецировался; repeated registration failure покрыт filesystem/injected-registry tests.
+
+### Безопасное обслуживание неопределённых установочных метаданных
+
+Обычный путь — повторить установку тем же доверенным package и canonical base; при живом
+owner/Job дождаться фактического завершения, не применять timeout для снятия защиты.
+Если receipt/intent/completion отсутствуют, повреждены или противоречат друг другу:
+
+1. Не удалять gate, App, GameData или App.* и не запускать Setup вручную поверх них.
+   Сохранить копии Control и установочных logs для диагностики, пользовательские данные
+   оставить на месте.
+2. Под exclusive installation lease достоверно проверить owner PID/start time, installer
+   Job и активные игровые сессии. Denied/unknown запрещает обслуживание.
+3. Сверить canonical paths, trusted package hash и идентичность операции с сохранёнными
+   достоверными метаданными. Восстановить повреждённую запись только из проверенной копии
+   той же операции, затем повторить обычный Coordinator retry. Не создавать completion
+   из одного файлового layout/HKCU и не считать имя App.* доказательством владения.
+4. Без такой копии/доказательства остановиться для отдельно согласованного обслуживания;
+   API не умеет безопасно принимать неизвестный App. Восстановление не должно уничтожать
+   данные и не выполняется автоматически этим PR.
+
+Это ограничение crash между отдельными atomic metadata writes, а не обещание общего
+transactional rollback. GUI для обслуживания метаданных здесь не реализуется.
 
 **Открытый release risk:** Velopack может выбрать LocalAppData для больших update
 downloads после потери доступа к App/packages. Coordinator preflight/TEMP/TMP не

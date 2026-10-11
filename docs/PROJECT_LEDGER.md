@@ -25,13 +25,18 @@
 > фактическое состояние публикации — Git/GitHub этой ветки, не собственный SHA в Ledger.
 > Merge/tag/Release запрещены; main/release, test-ветка и VHDX сохраняются.
 > В том этапе Installation Coordinator и GUI не реализовывались.
-> Актуальный этап 11.10.2026: [PR #12](https://github.com/lDiestrol/minecraft-launcher/pull/12)
+> Исторический этап 11.10.2026: [PR #12](https://github.com/lDiestrol/minecraft-launcher/pull/12)
 > merged; проверенный baseline feat/v0.6.1 — `c5b1f66c468685d92b90024cbba0f3744609012c`.
 > Реализован managed Installation Coordinator в отдельной
 > [feat/v061-install-coordinator](https://github.com/lDiestrol/minecraft-launcher/tree/feat/v061-install-coordinator).
 > Новый полный прогон **418/418** (46 новых), build 0 warnings/errors, restore/format/diff чистые.
 > Владелец разрешил logical commit/push/Draft PR в feat/v0.6.1; фактический HEAD/публикация
 > определяются Git/GitHub этой ветки. GUI не создан; merge/tag/Release не выполняются.
+> Актуальный этап 12.10.2026: исправления IC-001/IC-002/IC-003 в существующем
+> [Draft PR #13](https://github.com/lDiestrol/minecraft-launcher/pull/13), та же feature-ветка
+> и baseline c5b1f66. Новый full **441/441** (23 новых), build 0 errors/warnings;
+> результаты и реальные границы vendor fault-injection — раздел 12 ниже.
+> Владелец разрешил отдельный fix commit и обычный push для повторного review, не merge.
 
 ## 1. Назначение и источник состояния
 
@@ -553,7 +558,42 @@ SHA не дублируется в Ledger. Minecraft/Fabric smoke, installer/upd
 
 ## 12. Последние проверки
 
-### Installation Coordinator, 11.10.2026
+### Исправления Installation Coordinator review, 12.10.2026
+
+Работа в существующей feat/v061-install-coordinator от исходного PR #13 HEAD94f1971,
+дерево было чистым. Fetch проверил main bd98ecd, integration c5b1f66 и неизменный head
+PR #13; PR open/Draft. Исправления включены в отдельный logical fix commit этого PR,
+не переписывают историю. Актуальный SHA/status проверяются Git/GitHub, не дублируются здесь.
+
+| Замечание / проверка | Новый фактический результат |
+| --- | --- |
+| IC-001 P1 | Разделены IsAppVerified, IsRegistrationVerified и completion. HKCU проверяет точный PackId/App/version/title/authors/icon/Update uninstall commands/mandatory values; чужой registered App не заменяется. Только exit0 + inactive installer tree + files/root/HKCU публикуют отдельный atomic completion. Receipt никогда не доказывает успех; новая попытка не принимает старый completion token. Recovery сохраняет pending gate до Complete |
+| IC-002 P1 | Receipt/intent либо receipt/completion должны точно совпадать. Связанный retry допускает обычные соседние элементы base и vendor rollback, не присваивает их и не удаляет. App.* без доказательства ничего не разрешает; reparse siblings запрещены. Fresh install и mismatched/missing receipt остаются fail-closed |
+| IC-003 P2 | Canonical staging/GameData equal/ancestor/descendant отклоняются до intent/locator; recheck under lease и guard в Prepare. Нет миграции, смены locator или автоматического альтернативного каталога |
+| Full xUnit | **441/441**, Core422 + WPF19, 0 failed/skipped. 23 новых cases в InstallationReviewRegressionTests, прежние418 сохранены |
+| Targeted | **79/79**: InstallationSafety29, review regression23, installer crash4, StorageRoot crash6/recovery17. Owner crash при живом witness child блокирует recovery; после child exit gate остаётся до simulated successful retry publication |
+| Отдельный crash повтор | **10/10**, installation4 + StorageRoot6, 0 failed/skipped, после итогового full |
+| Restore/build | Новый restore успешен; build 0 errors/0 warnings. Первичный sandbox restore не прочитал user NuGet.Config, повтор вне sandbox успешен. Первичные CA1416 в новом registry reader устранены платформенной проверкой и foreach, без подавления diagnostics |
+| Format/diff/Markdown | Verify-only format и diff-check успешны; CRLF согласно .editorconfig. Проверены17 Markdown documents, 88 внутренних файловых ссылок, fences/paths OK |
+| Native Setup161 | Новый ignored diagnostic PackId MinecraftLauncher.InstallReview.20261012, dev0.0.1, win-x64/shortcutsNone. 3 реальные фазы через production installer Job: fresh post-extraction/pre-HKCU crash exit1223; retry post-rename/post-extraction crash exit1223; retry с no-delete handle backup, Setup exit0 при оставшемся rollback. Production registry verifier принимает реальную HKCU запись |
+| Сохранность PoC | Diagnostic uninstall exit0, только его App/HKCU удалены. Тестовые backups/logs/world/locator сохранены ignored. SHA world EF64A0107C79505CB0567C7CA5F04147ED73F8E3207DEA5884B253AF0F08CF2B, locator 43F0058125C85BF399E4884766CEA016E3C9C74CACAA5CEBF6A41829982471B2 неизменны |
+
+Существующие Minecraft/guardian/game Job/Server/Singleplayer/root resolver, UI/RAM,
+версии, SDK/vpk pins и update source не менялись. Пользовательские GameData/VHDX/backups
+и production не использовались. Preliminary targeted64/64 успешен вне sandbox; внутри
+sandbox единственный fail был symlink privilege1314, не assertion. Позднее добавлены
+ещё5 cases и выполнен указанный итоговый full.
+
+Границы: native proof использует отдельный PackId и hook fixture, не E2E всей production
+Coordinator/Launcher установки. Авария immediately-after-rename не воспроизведена: Job
+завершён позже, в install hook. Actual registry-write ACL failure не инъецировался;
+repeated failure/partial/wrong identity покрыты реальным FS с injected registry snapshot.
+Crash между отдельными intent/receipt writes остаётся fail-closed; противоречивые metadata
+требуют проверенной копии той же операции/отдельного обслуживания, не удаления gate.
+Порядок описан в [releasing.md](releasing.md). Updater fallback, GUI, real Win10/D:/UAC/
+low-space и stable installed E2E остаются следующими gates. Не объявлять release-ready.
+
+### Installation Coordinator, 11.10.2026 (исторический этап до исправлений ревью)
 
 Проверенная основа — merged PR #12, origin/feat/v0.6.1 c5b1f66. Main bd98ecd и
 release/v0.6.0 e426ecb не менялись. Исходное дерево было чистым; ранее установленный
