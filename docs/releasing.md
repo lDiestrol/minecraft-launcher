@@ -9,8 +9,8 @@
 - .NET SDK / target: .NET 10, `net10.0-windows`;
 - runtime: `win-x64`;
 - publish: self-contained, не single-file;
-- Velopack NuGet: `1.2.158`;
-- repository-local `vpk`: `1.2.158` в `.config/dotnet-tools.json`;
+- Velopack NuGet: `1.2.161`;
+- repository-local `vpk`: `1.2.161` в `.config/dotnet-tools.json`;
 - PackId: `lDiestrol.MinecraftLauncher`;
 - PackTitle: `Minecraft Launcher`;
 - MainExe: `MinecraftLauncher.exe`;
@@ -20,7 +20,58 @@
 
 Application install root Velopack и постоянный data root различны: `%LOCALAPPDATA%\lDiestrol.MinecraftLauncher` и `%LOCALAPPDATA%\MinecraftLauncher`. В installer входят только publish-файлы приложения. Minecraft, Fabric, Java, assets, libraries, instances, mods/config, settings и cache не входят.
 
-## Исследование следующего GUI installer, 11.10.2026
+## Контролируемое обновление SDK/vpk 1.2.161, 11.10.2026
+
+Отдельно согласовано после архитектурного исследования: App, Infrastructure,
+test-only UpdateE2EHarness и repository-local vpk закреплены на 1.2.161.
+Версия приложения остаётся 0.6.0; PackId/MainExe/GithubSource/stable/dev и layout
+не менялись. Installer/Coordinator не создаются. История исследования158 сохранена ниже.
+Причина обновления и upstream change — [release 1.2.161](https://github.com/velopack/velopack/releases/tag/1.2.161);
+это не доказательство совместимости настоящей пользовательской установки.
+
+Новые tool/solution restore, build 0 errors/warnings, xUnit372/372, crash/recovery23/23,
+format verify и ReleaseFeedScriptTests успешны. CLI version подтверждена dotnet vpk -h
+(--version не поддерживается). Неизменённый build-release.ps1 реально выполнен с
+test-only Version0.6.1-velopack-test.1, Channeldev, KeepPreviousReleases в ранее отсутствовавших
+dedicated outputs: Setup/full/portable/feed/assets/SHA256SUMS созданы. Ничего не опубликовано
+в Releases; версия Directory.Build.props не повышена. Packaging warnings — unsigned files.
+
+Новый ignored PoC: artifacts/velopack-upgrade-12161-20261011, diagnostic PackId
+MinecraftLauncher.VelopackUpgrade.20261011, dev, без shortcuts. Не настоящий Launcher.
+Host0.0.1 (SDK/vpk158) установлен silent в custom C: path с пробелами вне LocalAppData;
+host0.0.2 (SDK/vpk161) упакован в тот же local feed. Full/delta созданы, check/download/apply/
+restart успешны. Download evidence содержит готовый full package; не утверждается
+проверка всех вариантов delta fallback. AppId/channel/root сохранены, реальные cache paths:
+App/packages и App/packages/VelopackTemp. Полный native write trace не снимался;
+служебный native uninstall temp использует OS TEMP, поэтому all-writes-on-D не доказано.
+
+**Корневой updater измерен отдельно от SDK:** до update FileVersion/ProductVersion1.2.158,
+SHA256 4b2bfeed811543e2d37be8743f2b1ea46dd947bc09c8ada9eb0383c0d7886cdb;
+после apply/restart и startup hook FileVersion/ProductVersion1.2.161,
+SHA256 acefb4a2cb46cc77ed3c2364db17f8bd2a25e2197cfeae56cd85e88a7ac21ac5.
+Новый hash совпадает с vendor update_x64.exe161. Из этого нельзя выводить, что одно
+редактирование SDK pin или любое прерванное обновление сразу заменит Update.exe:
+проверка относится к завершённой диагностической цепочке с новым startup lifecycle.
+
+Чистая установка новым Setup161 --silent --installto также exit0; install hook успешен,
+обычный launch отсутствует. Штатный uninstall диагностического App удалил current/HKCU
+registration, сохранил соседний GameData и sandbox Control. Их hashes неизменны после
+update, uninstall/reinstall и финального uninstall:
+
+- World sentinel: b5f5311ca80ba278779b312bf9e79eb364dc628a46ef3acdd9b9be7c16fe014b.
+- Locator: 423397135926d35870f30bf019d8cd72ce2b4a1ba21368893936037dc095cab0.
+
+Исходники, publish/feed, logs и JSON измерений сохранены ignored для локального повторения;
+в upgrade PR включены только pins и документация, без диагностических binaries.
+Реальный stable0.6.0 → candidate Launcher E2E не выполнен: отдельный Windows user/VM
+не предоставлен, текущие installation/Control/GameData не трогались. Обязательный
+release gate: такой upgrade, оба режима/guardian/world/settings и native updater version
+на Win10/11, выбранном D: и при faults/низком месте; Authenticode отсутствует.
+Fallback locator на LocalAppData при unwritable App остаётся отдельным Coordinator
+preflight/fault-injection требованием, SDK upgrade его не устраняет. UAC/cross-user,
+GUI/MSI, low-space и настоящий D:/VHDX packaging здесь не проверены.
+
+## Историческое исследование следующего GUI installer, 11.10.2026
 
 Installer в Storage Root этапе **не создаётся**; версия app/SDK/vpk остаётся прежней.
 GameData можно первоначально назначить через локальный `StorageRootResolver.ConfigureNewRoot()`;
@@ -58,6 +109,141 @@ PR, проверив поддерживаемые OS и installed v0.6.0 → н�
 зависимости не обновляются. Затем выбрать GUI bootstrapper поверх `Setup --installto`
 либо доработанную MSI-схему с root locator; нужны тесты прав/per-user identity,
 temp/package paths при почти полном C:, сохранности legacy данных и update/restart.
+
+## Исторический GUI Installer feasibility и предложение архитектуры, 11.10.2026
+
+Исследован merged baseline `6f5e11e` в `feat/v0.6.1`; PR #10/#11 merged.
+Это предложение для согласования, не реализация GUI и не разрешение выпуска.
+SDK/vpk остаются 1.2.158. Производственные App/GameData/Control не изменены.
+
+**Рекомендуемый вариант — собственный per-user GUI-bootstrapper над native Setup.**
+Bootstrapper отвечает за русский интерфейс, выбор базовой папки, preflight,
+coordination, initial configuration и проверку результата; Velopack остаётся владельцем
+App layout, регистрации, shortcuts, packages и application updates. PackId,
+GithubSource и stable/dev не меняются. Bootstrapper не запускается при каждом update.
+Публичным Setup.exe должен стать внешний GUI; raw vendor Setup остаётся внутренним
+payload, иначе пользователь может обойти выбор папки. Full/delta/feed filenames и
+package identity сохраняются; SHA256SUMS должен относиться к внешнему GUI artifact.
+
+MSI технически поддерживает произвольный путь через VELOPACK_INSTALLDIR и сохраняет
+Velopack layout, но pinned navigation не открывает BrowseDlg. Добавление picker,
+root initialization и rollback потребует собственного MSI authoring/custom actions;
+per-machine/UAC противоречит нынешнему per-user Control. Это не простой готовый GUI.
+MSI repair/reinstall после Velopack update требует отдельной проверки из-за разных
+механизмов владения установленными файлами. Для v0.6.1 MSI не рекомендуется.
+
+Для требования почти полного C: предпочтителен небольшой native Win32 GUI, manifest
+asInvoker, static CRT, без отдельного framework bootstrap. Управляемый storage initializer
+на .NET 10 вызывает существующий resolver, а не копирует его правила. Его self-contained
+payload и native Setup извлекаются только в уникальный private staging выбранного тома;
+это дополнительный Windows C++ build step, который нужно согласовать и проверить.
+WPF single-file bootstrapper без native stage не является доказанным решением:
+[.NET extraction](https://learn.microsoft.com/en-us/dotnet/core/deploying/single-file/overview)
+при self-extract происходит до managed Main и по умолчанию использует TEMP/.net.
+GUI/native orchestration и полный контроль extraction ещё не прототипированы.
+
+Предлагаемый первоначальный lifecycle:
+
+1. Проверить token/current-user identity, существующую установку и locator, не вызывая
+   OpenSession для обнаружения чистой установки: этот API может создать legacy root.
+   Не выполнять elevation; запуск с elevated/чужим token отклонять до записи Control.
+2. Показать `<base>/App` и `<base>/GameData`, проверить canonical local paths,
+   NTFS/права/место/reparse/пересечения. Не принимать чужой непустой App:
+   silent Setup отвечает yes на overwrite и способен удалить его содержимое.
+3. Сериализовать installer/обычные Launcher/guardian операции на всём критическом
+   участке, повторно проверить активные игры через существующий root/activity контракт.
+   Нужен узкий installation lease/gate с повторным использованием Control locking:
+   ConfigureNewRoot сейчас освобождает exclusive lease после вызова и сам по себе
+   не является транзакцией установки. Не обходить crash-safe intent/witness.
+4. Initializer получает только локально выбранные пути, actual target App directory
+   и текущий LocalApplicationData; вызывает ConfigureNewRoot **до native Setup**.
+   Это исключает даже ручной запуск опубликованного shortcut до готовности указателя.
+   Не полагаться на fast install hook: vendor hook failure не отменяет установку.
+5. Запустить Setup --silent --installto `<base>/App`, с log/temp/staging на выбранном
+   томе и без shell/string-built command execution. Проверить exit code **и** фактические
+   manifest/PackId/version/root/update paths; exit0 не заменяет проверки результата.
+   Silent Setup выполняет install hook, но не обычный запуск приложения.
+6. Проверить configured root через resolver; только после успеха дать GUI-действие
+   «Запустить». Ошибка оставляет понятный retry state, без fallback и удаления миров.
+   Pointer/App install не являются общей atomic transaction: после неудачного Setup
+   безопасно сохранить новый указатель для retry; не откатывать его без доказанной
+   принадлежности и отсутствия новых игровых данных/владельцев.
+
+При legacy v0.6.0 или уже сохранённом root GameData остаётся на прежнем месте.
+GUI явно сообщает об этом; выбор другой папки не означает перенос. App существующей
+установки обновляется на прежнем месте, вторую установку того же PackId не создавать.
+App/GameData на одном выбранном томе — контракт **чистой** установки. Перенос App или
+GameData существующего пользователя остаётся отдельным согласуемым направлением.
+
+Обновление использует current/package metadata, сохраняет channel и GithubSource;
+работает только с App/current, App/packages и App/packages/VelopackTemp. В SDK/native
+[locator 1.2.158](https://github.com/velopack/velopack/blob/1.2.158/src/lib-csharp/Locators/WindowsVelopackLocator.cs)
+есть LocalAppData fallback при unwritable App; то же поведение осталось в 1.2.161.
+Обязателен fail-closed preflight до SDK initialization и download/apply, проверка
+фактических locator paths и отказ от download вне App. Потеря прав/тома между проверкой
+и native I/O — отдельный fault-injection gate; отсутствие скрытого C: fallback в этом
+сценарии пока не доказано. Update/uninstall могут принудительно остановить App/guardian,
+поэтому согласование активной игры должно произойти **до** передачи управления vendor.
+
+Uninstall удаляет только проверенный App и его registration/shortcuts; parent base,
+GameData и Control сохраняются. Не добавлять автоматическую data cleanup. Повторная
+установка использует сохранённый root. Собственные диалоги всегда русские, native Setup
+silent; системные UAC/SmartScreen/dialogs имеют язык OS, не контролируемый приложением.
+
+**Новый изолированный PoC:** ignored artifacts/installer-feasibility-20261011,
+отдельный PackId MinecraftLauncher.InstallerFeasibility.20261011, без shortcuts.
+Использован закреплённый SDK/vpk 1.2.158 и настоящая уже собранная Infrastructure.
+Сборки тестового host 0.0.1/0.0.2 успешны; vpk предупредил об unsigned files и
+VelopackApp.Run в async state machine (PoC, не production entry point).
+
+| Фактическая проверка | Результат |
+| --- | --- |
+| Initial ConfigureNewRoot → OpenSession | Новый соседний GameData сохранён/повторно открыт; повторная та же конфигурация успешна, попытка переноса непустого legacy отклонена |
+| Self-contained single-file initializer host | Exit0 с per-process TEMP/TMP/extract-base внутри lab; helper подтвердил значение extract-base. Полный native write trace и фактическая runtime extraction не подтверждены |
+| Native Setup --silent --installto | Exit0; custom C: path с пробелами вне LocalAppData; install hook успешен, обычный запуск отсутствует |
+| Installed local-feed 0.0.1 → 0.0.2 | Check/download/apply/restart успешны; новый host подтвердил version0.0.2, тот же RootAppDir, PackagesDir и AppTempDir внутри App |
+| Uninstall diagnostic package | Exit0; App/current и отдельная HKCU registration удалены; GameData sentinel level.dat и sandbox locator SHA-256 не изменились после update и uninstall |
+
+World SHA-256: 5208ae034c39ebcd4b227b3557f8bd58dc9d75f3bda35b4dfa79b69bc72837ce.
+Locator SHA-256: 7a8c13ada6b4fcee040e66a27f95f88381b71b90bf5d51b523ff266403f74227.
+Сохранены source/publish/feed/JSON/logs для повторения; установлен только test host,
+затем он штатно удалён. Настоящий per-user locator и Minecraft не использовались.
+
+Это не GUI test, не MSI E2E, не реальный v0.6.0 → v0.6.1, не D:/low-space/UAC test
+и не новый полный regression Launcher. Предыдущие 372/372 здесь не повторялись.
+Read-only volume snapshot: C: NTFS, примерно 393 GiB свободно; D: NTFS Fixed,
+32 GiB capacity, примерно 30.8 GiB свободно. VHDX C:/LauncherVHDTest/TestDisk.vhdx
+не менялся. Файл VHDX лежит на C:: при динамическом расширении место D: зависит от
+backing volume, поэтому он не заменяет независимый физический D: для full-C test.
+
+Официальный [compare 1.2.158...1.2.161](https://github.com/velopack/velopack/compare/1.2.158...1.2.161)
+содержит пять изменённых файлов: native runtime_arch.rs и четыре Node/npm файла;
+C# API, MSI template и root locator не изменены. Предлагается отдельно согласовать
+SDK+vpk 1.2.161; это сильное свидетельство низкого API migration риска, не доказательство
+совместимости установленного stable пакета. App version/production release не менялись.
+В installed update отдельно снимать версии SDK и корневого Update.exe: upgrade
+NuGet/vpk не доказывает автоматическую замену уже работающего native updater.
+
+Предлагаемые небольшие PR после согласования: (1) SDK/vpk upgrade, если разрешён,
+с compatibility tests; (2) initializer + installation lease/preflight/retry tests,
+без нового game root implementation; (3) русский GUI/native payload extraction и
+packaging без изменения production source; (4) opt-in Windows installer/update/uninstall
+E2E и release checklist. Не смешивать эти этапы с RAM/UI Launcher/Storage Manager.
+
+Windows acceptance matrix: Win10 x64 22H2 и поддерживаемые LTSC/Enterprise, Win11
+x64 актуальные поддерживаемые версии; ordinary/admin split tokens, другой UAC account,
+ru/en OS, Unicode/spaces/long paths, DPI100/150/200%, keyboard-only. На disposable VM
+проверить чистую установку C:/physical D:/VHDX D:, legacy in-place upgrade и reinstall;
+непустой чужой App, links/UNC/mapped network/system paths/отказ ACL; почти полный C:
+и D:, quota/backing-file exhaustion, missing/detached/read-only disk, transient I/O.
+Каждый install/update failure/crash/cancel проверить до/после locator и App publication;
+параллельные installer/Launcher/guardian/игра должны безопасно блокироваться.
+Успешный update проверяется по restart version/root/cache/channel/shortcuts/registration,
+full и delta packages, offline/corrupt download и retry. Uninstall/reinstall и оба игровых
+режима проверяются с Fabric/Java/shared mapping и world/settings/user-file SHA manifest.
+Наш VHDX/root сохранять: новые тесты только в отдельном каталоге или disposable копии,
+не форматировать и не заполнять текущие тома. SDK trace/Process Monitor должен подтвердить
+реальные write paths; только после этих gates installer считается release-ready.
 
 ## Локальная упаковка
 
