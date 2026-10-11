@@ -43,6 +43,7 @@ public sealed class MainViewModel : ObservableObject
     private string _progressDetails = string.Empty;
     private string _playButtonText = "ИГРАТЬ";
     private CancellationTokenSource? _gameLaunchCancellation;
+    private GameLaunchMode? _activeLaunchMode;
     private LauncherUpdateInfo? _availableUpdate;
     private string _updateStatusText = string.Empty;
     private double _updateProgressValue;
@@ -70,7 +71,8 @@ public sealed class MainViewModel : ObservableObject
         _logger = logger;
 
         ConnectCommand = new AsyncRelayCommand(ConnectAsync, CanConnect);
-        PlayCommand = new AsyncRelayCommand(PlayAsync, () => !IsBusy);
+        PlayCommand = new AsyncRelayCommand(() => PlayAsync(GameLaunchMode.Server), () => !IsBusy);
+        SingleplayerCommand = new AsyncRelayCommand(() => PlayAsync(GameLaunchMode.Singleplayer), () => !IsBusy);
         RepairCommand = new AsyncRelayCommand(
             RepairAsync,
             () => !IsBusy && _bootstrap is not null && SelectedProfile is not null);
@@ -116,6 +118,8 @@ public sealed class MainViewModel : ObservableObject
     public AsyncRelayCommand ConnectCommand { get; }
 
     public AsyncRelayCommand PlayCommand { get; }
+
+    public AsyncRelayCommand SingleplayerCommand { get; }
 
     public AsyncRelayCommand RepairCommand { get; }
 
@@ -301,6 +305,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 ConnectCommand.RaiseCanExecuteChanged();
                 PlayCommand.RaiseCanExecuteChanged();
+                SingleplayerCommand.RaiseCanExecuteChanged();
                 RepairCommand.RaiseCanExecuteChanged();
                 OpenSettingsCommand.RaiseCanExecuteChanged();
                 CancelSettingsCommand.RaiseCanExecuteChanged();
@@ -819,7 +824,7 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    private async Task PlayAsync()
+    private async Task PlayAsync(GameLaunchMode mode)
     {
         ErrorText = null;
         if (_bootstrap is null)
@@ -844,7 +849,7 @@ public sealed class MainViewModel : ObservableObject
             GameLaunchRequest request;
             try
             {
-                request = GameLaunchRequestFactory.Create(selectedProfile, Nickname, RamMb);
+                request = GameLaunchRequestFactory.Create(selectedProfile, Nickname, RamMb, mode);
             }
             catch (GameLaunchException exception)
             {
@@ -854,6 +859,8 @@ public sealed class MainViewModel : ObservableObject
             }
 
             ScheduleSettingsSave();
+            _activeLaunchMode = mode;
+            StatusText = WithLaunchMode("Подготовка Minecraft...");
             IsBusy = true;
             IsGamePreparing = true;
             IsGameRunning = false;
@@ -877,17 +884,17 @@ public sealed class MainViewModel : ObservableObject
 
                 if (result.ExitCode == 0)
                 {
-                    StatusText = "Minecraft завершён";
+                    StatusText = WithLaunchMode("Minecraft завершён");
                 }
                 else
                 {
-                    StatusText = "Minecraft завершился с ошибкой";
+                    StatusText = WithLaunchMode("Minecraft завершился с ошибкой");
                     ErrorText = $"Код завершения: {result.ExitCode}. Подробности записаны в лог.";
                 }
             }
             catch (OperationCanceledException)
             {
-                StatusText = "Операция отменена";
+                StatusText = WithLaunchMode("Операция отменена");
                 ProgressDetails = string.Empty;
             }
             catch (PackSyncException exception)
@@ -912,6 +919,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 _gameLaunchCancellation.Dispose();
                 _gameLaunchCancellation = null;
+                _activeLaunchMode = null;
                 IsGamePreparing = false;
                 IsGameRunning = false;
                 IsProgressIndeterminate = true;
@@ -997,7 +1005,7 @@ public sealed class MainViewModel : ObservableObject
 
     private void UpdateGameProgress(GameLaunchProgress progress)
     {
-        StatusText = GetFriendlyStatus(progress.Stage);
+        StatusText = WithLaunchMode(GetFriendlyStatus(progress.Stage));
         if (progress.Percentage is double percentage)
         {
             IsProgressIndeterminate = false;
@@ -1025,7 +1033,7 @@ public sealed class MainViewModel : ObservableObject
 
     private void UpdatePackProgress(PackSyncProgress progress)
     {
-        StatusText = GetFriendlyStatus(progress.Stage);
+        StatusText = WithLaunchMode(GetFriendlyStatus(progress.Stage));
         if (progress.Percentage is double percentage)
         {
             IsProgressIndeterminate = false;
@@ -1068,6 +1076,13 @@ public sealed class MainViewModel : ObservableObject
             ? $"{completed} / {progress.TotalFiles.Value} файлов"
             : string.Empty;
     }
+
+    private string WithLaunchMode(string status) => _activeLaunchMode switch
+    {
+        GameLaunchMode.Server => $"{status} — игра на сервере",
+        GameLaunchMode.Singleplayer => $"{status} — одиночная игра",
+        _ => status,
+    };
 
     private static string GetFriendlyStatus(GameLaunchStage stage) => stage switch
     {

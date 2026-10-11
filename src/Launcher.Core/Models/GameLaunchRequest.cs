@@ -8,4 +8,5 @@ public sealed record GameLaunchRequest(
     string Nickname,
     int RamMb,
     string ServerAddress,
-    ushort ServerPort);
+    ushort ServerPort,
+    GameLaunchMode Mode = GameLaunchMode.Server);

@@ -3,21 +3,30 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shell;
+using System.Windows.Threading;
 using Launcher.App.Dialogs;
+using Launcher.App.ViewModels;
+using Xunit.Abstractions;
 
 namespace Launcher.App.Tests;
 
-public sealed class WindowChromeBehaviorTests
+public sealed class WindowChromeBehaviorTests(ITestOutputHelper output)
 {
     [Fact]
     public void CaptionButtonsExecuteTheirWindowActions()
     {
         RunInSta(() =>
         {
-            App application = new();
-            application.InitializeComponent();
+            // Load production resources without starting networking or writing real settings.
+            Application application = new() { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+            application.Resources.MergedDictionaries.Add(new ResourceDictionary
+            {
+                Source = new Uri("/MinecraftLauncher;component/Themes/DarkGaming.xaml", UriKind.Relative),
+            });
+            application.Resources.Add("BooleanToVisibilityConverter", new BooleanToVisibilityConverter());
 
             AssertBrush(application, "TextBrush", "#EAF3F7");
             AssertBrush(application, "SecondaryTextBrush", "#B5C9D4");
@@ -44,6 +53,8 @@ public sealed class WindowChromeBehaviorTests
             };
 
             window.Show();
+
+            AssertLaunchButtonsLayout(window, output);
 
             Button minimizeButton = FindButton(window, "Свернуть окно");
             Button maximizeButton = FindButton(window, "Развернуть окно");
@@ -96,6 +107,95 @@ public sealed class WindowChromeBehaviorTests
         // Allow only one representable double step, not a pixel-sized layout tolerance.
         Assert.Equal(expectedWidth, button.ActualWidth, tolerance: Math.BitIncrement(expectedWidth) - expectedWidth);
         Assert.Equal(expectedHeight, button.ActualHeight, tolerance: Math.BitIncrement(expectedHeight) - expectedHeight);
+    }
+
+    private static void AssertLaunchButtonsLayout(MainWindow window, ITestOutputHelper output)
+    {
+        MainViewModelLaunchTests.Fixture fixture = new();
+        MainViewModel viewModel = fixture.CreateViewModelAsync().GetAwaiter().GetResult();
+        viewModel.DismissUpdateOfferCommand.Execute(null);
+        window.Width = 900;
+        window.Height = 650;
+        window.DataContext = viewModel;
+        window.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        window.UpdateLayout();
+
+        Button serverButton = FindButton(window, "Играть");
+        Button singleplayerButton = FindButton(window, "Одиночная игра");
+        Assert.Same(viewModel.PlayCommand, serverButton.Command);
+        Assert.Same(viewModel.SingleplayerCommand, singleplayerButton.Command);
+        Assert.True(serverButton.IsVisible);
+        Assert.True(singleplayerButton.IsVisible);
+        output.WriteLine($"Native window: {window.ActualWidth}x{window.ActualHeight} DIP; DPI X/Y={VisualTreeHelper.GetDpi(serverButton).DpiScaleX}/{VisualTreeHelper.GetDpi(serverButton).DpiScaleY}.");
+        Assert.True(serverButton.Focusable);
+        Assert.True(singleplayerButton.Focusable);
+        Assert.True(KeyboardNavigation.GetIsTabStop(serverButton));
+        Assert.True(KeyboardNavigation.GetIsTabStop(singleplayerButton));
+        Assert.True(serverButton.Focus());
+        Assert.True(serverButton.MoveFocus(new TraversalRequest(FocusNavigationDirection.Next)));
+        Assert.Same(singleplayerButton, Keyboard.FocusedElement);
+        AssertButtonsFitViewport(window, serverButton, singleplayerButton);
+
+        // Exercise the actual dashboard at synthetic DPI without changing monitor settings.
+        FrameworkElement content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+        content.DataContext = viewModel;
+        window.Content = null;
+        try
+        {
+            foreach (double scale in new[] { 1d, 1.25d, 1.5d, 1.75d, 2d })
+            {
+                VisualTreeHelper.SetRootDpi(content, new DpiScale(scale, scale));
+                content.Measure(new Size(900, 650));
+                content.Arrange(new Rect(0, 0, 900, 650));
+                content.UpdateLayout();
+                Assert.Equal(scale, VisualTreeHelper.GetDpi(serverButton).DpiScaleX);
+                Assert.Equal(scale, VisualTreeHelper.GetDpi(singleplayerButton).DpiScaleY);
+                AssertButtonsFitViewport(content, serverButton, singleplayerButton);
+                output.WriteLine($"Synthetic dashboard DPI {scale * 100}%: both buttons fit viewport.");
+            }
+        }
+        finally
+        {
+            window.Content = content;
+            content.ClearValue(FrameworkElement.DataContextProperty);
+            window.UpdateLayout();
+        }
+    }
+
+    private static void AssertButtonsFitViewport(Visual root, Button serverButton, Button singleplayerButton)
+    {
+        Assert.Equal(Visibility.Visible, serverButton.Visibility);
+        Assert.Equal(Visibility.Visible, singleplayerButton.Visibility);
+        Assert.True(serverButton.ActualWidth > 200);
+        Assert.True(singleplayerButton.ActualWidth > 200);
+        Assert.True(serverButton.ActualHeight >= 65);
+        Assert.True(singleplayerButton.ActualHeight >= 43);
+        ScrollViewer viewport = FindAncestor<ScrollViewer>(singleplayerButton);
+        Rect serverBounds = serverButton.TransformToAncestor(viewport).TransformBounds(new Rect(serverButton.RenderSize));
+        Rect singleplayerBounds = singleplayerButton.TransformToAncestor(viewport).TransformBounds(new Rect(singleplayerButton.RenderSize));
+        Assert.True(serverBounds.Top >= 0);
+        Assert.True(serverBounds.Left >= 0);
+        Assert.True(singleplayerBounds.Left >= 0);
+        Assert.True(serverBounds.Bottom <= singleplayerBounds.Top);
+        Assert.True(singleplayerBounds.Right <= viewport.ActualWidth);
+        Assert.True(singleplayerBounds.Bottom <= viewport.ActualHeight,
+            $"Singleplayer button bottom {singleplayerBounds.Bottom} exceeds viewport height {viewport.ActualHeight} at DPI {VisualTreeHelper.GetDpi(root).DpiScaleY}.");
+    }
+
+    private static T FindAncestor<T>(DependencyObject child) where T : DependencyObject
+    {
+        DependencyObject? current = VisualTreeHelper.GetParent(child);
+        while (current is not null)
+        {
+            if (current is T ancestor)
+            {
+                return ancestor;
+            }
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        throw new InvalidOperationException($"Ancestor '{typeof(T).Name}' was not found.");
     }
 
     private static void AssertBrush(Application application, string key, string expected)
