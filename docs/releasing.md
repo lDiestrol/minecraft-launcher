@@ -18,7 +18,117 @@
 - channels: `dev`, `stable`;
 - code signing: отсутствует, сборки unsigned.
 
-Application install root Velopack и постоянный data root различны: `%LOCALAPPDATA%\lDiestrol.MinecraftLauncher` и `%LOCALAPPDATA%\MinecraftLauncher`. В installer входят только publish-файлы приложения. Minecraft, Fabric, Java, assets, libraries, instances, mods/config, settings и cache не входят.
+В stable v0.6.0 install root и legacy data root различны: `%LOCALAPPDATA%\lDiestrol.MinecraftLauncher` и `%LOCALAPPDATA%\MinecraftLauncher`. Новая GUI-ветка позволяет выбрать `<Base>\App` и `<Base>\GameData`; существующий locator/legacy GameData сохраняется без переноса. Minecraft, Fabric, Java, assets, libraries, instances, mods/config, settings и cache не входят в release payload.
+
+## Native GUI Bootstrapper: PR #14, 12.10.2026
+
+Основа — PR #13, merged в `feat/v0.6.1` (`9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`).
+Реализация находится в отдельной `feat/v061-gui-bootstrapper`. Версия приложения,
+SDK/vpk161, PackId/MainExe/channel/GithubSource не меняются. Это Draft для ревью,
+**не release-ready установщик** и не доказанный upgrade stable0.6.0 → v0.6.1.
+
+Публичный `lDiestrol.MinecraftLauncher-<channel>-Setup.exe` теперь содержит native
+Win32 x64 GUI (RU, UTF-16, asInvoker, PerMonitorV2, keyboard navigation). `/MT`
+устраняет отдельную установку VC Redistributable. GUI не требует .NET до выбора тома.
+Проверка bundled index читает метаданные без извлечения runtime. После выбора GUI
+извлекает файлы с `CreateNew` в `<Base>\.launcher-install\bootstrap-<GUID>` с private
+ACL пользователя/SYSTEM, проверкой reparse/containment и SHA-256 каждого файла.
+`TEMP/TMP` **только дочернего helper** указывают туда же; global environment не меняется.
+Managed helper публикуется self-contained win-x64, non-single-file. Installation
+Coordinator остаётся единственным владельцем preflight/lease/recovery/Setup/verification.
+
+`build-release.ps1` вызывает [build-bootstrapper.ps1](../scripts/build-bootstrapper.ps1)
+после vpk, заменяет внешний Setup на native bundle **до** финализации SHA256SUMS.
+Внутренний vendor Setup остаётся в ignored build workspace/bundle и не публикуется
+отдельно. Full/Delta/Portable/feed сохраняют прежний Velopack contract.
+Каталог закрепляет SDK161, product/version/channel, Setup/full hashes и Update.exe
+из Portable того же vpk run. Чужой runtime identity не принимается из IPC.
+Unsigned EXE + встроенные hashes дают integrity, **не подтверждение издателя**.
+Authenticode/SmartScreen остаются release gates. Текущий unsigned index/footer
+расположен в EOF: перед signing необходима reviewed поддержка PE Security Directory
+и certificate alignment, иначе добавленная Authenticode certificate table нарушит
+поиск footer. Не подписывать этот формат без такой проверки. Использовать PowerShell 7 (`pwsh`).
+
+Изолированная упаковка без изменения обычных outputs:
+
+```powershell
+./scripts/build-release.ps1 -Version 0.6.0 -Channel dev -ArtifactDirectory artifacts/bootstrapper/release-proof
+./scripts/build-native-bootstrapper.ps1 -Tests
+```
+
+Проверенный toolchain: Microsoft Build Tools2022 17.14.41, MSVC19.44.35229
+(tools14.44.35207), linker14.44.35229, Windows SDK10.0.26100.0,
+Resource Compiler file/product version10.0.26100.7705. Installer exit0,
+перезагрузка не требовалась. Minimal Win32 probe: UTF-16 window text, asInvoker/
+PerMonitorV2 manifest, exit0. Native product собирается `/W4 /WX`, зависимости только
+системные DLL, без MSVC runtime DLL. Source version `.NET10.0.401` не обновлялась.
+
+Новый собственный прогон: restore/build0 errors/warnings; xUnit466/466 (447 Core,
+19 WPF), включая25 новых случаев; отдельный Installation/StorageRoot crash filter10/10;
+native48 checks — strict JSON/context/stage transitions, Unicode, path rejection,
+payload integrity, CreateNew/retry, отмена до и во время extraction, повреждённые index/payload.
+Format verify, release-feed tests и изолированный полный packaging успешны.
+Packaging сообщает только ожидаемые unsigned warnings; это не compiler warnings.
+
+### Windows E2E — не завершён
+
+Диагностический пакет имеет отдельный compiled PackId
+`MinecraftLauncher.BootstrapperDiagnostic`, `VendorProbe.exe`, version0.0.1/dev и
+Control рядом с **диагностическим** outer EXE (`diagnostic-profile`). Production
+helper не имеет переключателя для этой идентичности. Небольшое internal product
+binding backend используется только compiled helper/test кодом; default Launcher
+identity и публичные API не изменены. Diagnostic host проверяет vendor lifecycle и
+launch marker, не Minecraft/WPF startup lifecycle. Vendor shortcuts `None` в этом
+пакете: реальные Desktop/StartMenu shortcuts Launcher требуют отдельного smoke.
+
+Сборка [package-diagnostic-bootstrapper.ps1](../scripts/package-diagnostic-bootstrapper.ps1)
+успешна. Попытки GUI smoke здесь отклонены **до staging**: host имеет `EnableLUA=0`,
+elevated user/Explorer. Защита не отключалась, UAC/registry security не менялись.
+Реальная установка C:/D:, vendor TEMP traces, cancellation during Setup, helper/native
+crash, retry, HKCU, installed Update.exe и screenshots успешных экранов **не доказаны**.
+Владелец согласовал последующий обычный Windows user/VM smoke.
+
+Developer-only [BootstrapperE2E.ps1](../tests/BootstrapperE2E.ps1) требует ordinary
+session, проверяет embedded diagnostic catalog до выполнения, отказывается от чужой
+diagnostic registration и создаёт уникальные lab paths на выбранных томах. Он
+предусматривает clean/retry, Update hash/registration/completion/launch marker,
+sentinel GameData/locator, opt-in uninstall/reinstall и screenshots. Script проверен
+синтаксически, **его E2E assertions в этой среде не выполнены**. Не использовать
+production outer EXE в этом harness. Пользователю обычного installer команды не нужны.
+
+```powershell
+./scripts/package-diagnostic-bootstrapper.ps1
+./tests/BootstrapperE2E.ps1 -Bootstrapper '<diagnostic outer EXE>' -UninstallAndReinstall
+```
+
+Тестовый VHDX `D:` не detach/resize; `D:\MinecraftLauncher\GameData`, backing VHDX,
+backup и пользовательский locator не изменялись. C: backing файла означает, что D:
+не доказывает почти заполненный C:. Disk-full, отказ ACL и detach — только disposable VM.
+
+### Незакрытые gates и временные файлы
+
+Bootstrapper извлекает крупные файлы на выбранный том; это подтверждено native
+extraction tests. Полный OS/vendor write trace не снят. По коду передаётся staging
+TEMP, но нет гарантии отсутствия всех иных vendor/OS/LocalAppData записей.
+Staging и helper.log намеренно сохраняются для безопасного retry/диагностики;
+нет автоматического recursive cleanup, adoption неизвестных файлов или удаления
+GameData. Каждый retry создаёт новую extraction directory: накопление места —
+явное ограничение этого Draft, managed cleanup требует отдельного reviewed contract.
+Uninstall выполняется только vendor updater, GameData/Control не удаляются bootstrapper.
+
+Известный **SDK update download fallback на LocalAppData не исправлен**. Следующий
+маленький PR: перед вызовом SDK проверить App/current и packages через безопасные
+file handles, volume/path/reparse/write access; при недоступном App fail closed до
+download. Проверять actual SDK locator/download paths и отсутствие крупного fallback
+при denied packages, недоступном D:, нехватке места, concurrent update/install/game.
+До этих fault/E2E проверок и полного Win10/11 Launcher update smoke release запрещён.
+
+Список обязательных обычных Windows10/11 E2E: C/D и Cyrillic/spaces; DPI100/150/200
+и keyboard/folder dialog; clean + managed retry без второго Setup; legacy/unmanaged
+App refusal без миграции; configured root на другом диске/недоступный том; real Launcher
+shortcuts/HKCU/Update hash; отмена во время extraction/Setup; helper/native crash +
+pending intent recovery; uninstall/reinstall с world/locator hashes; Server/Singleplayer,
+guardian и Minecraft после закрытия Launcher; disk-full/ACL/detach в disposable VM.
 
 ## Историческое контролируемое обновление SDK/vpk 1.2.161, 11.10.2026
 

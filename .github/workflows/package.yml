@@ -52,6 +52,13 @@ jobs:
         shell: pwsh
         run: ./scripts/build-release.ps1 -Version '${{ inputs.version }}' -Channel '${{ inputs.channel }}'
 
+      - name: Native safety tests against packaged bootstrapper
+        shell: pwsh
+        run: |
+          ./scripts/build-native-bootstrapper.ps1 -Tests
+          & ./artifacts/bootstrapper/native-production/native-tests.exe 'artifacts/releases/${{ inputs.channel }}/lDiestrol.MinecraftLauncher-${{ inputs.channel }}-Setup.exe' "$PWD/artifacts/bootstrapper/ci-native-tests"
+          if ($LASTEXITCODE -ne 0) { throw 'Native bootstrapper checks failed.' }
+
       - name: Verify SHA-256 manifest
         shell: pwsh
         run: |

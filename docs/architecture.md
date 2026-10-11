@@ -242,3 +242,46 @@ SDK update-download fallback при unwritable App пока не устранё�
 ## Release packaging
 
 Authoritative version хранится в `Directory.Build.props`. `scripts/build-release.ps1` выполняет self-contained `win-x64` publish и pinned `vpk 1.2.161`, создаёт Setup/full/portable/release index и `SHA256SUMS.txt`. Детали: [releasing.md](releasing.md).
+
+### Native bootstrapper и IPC v1
+
+`native/Launcher.Bootstrapper` — Win32 x64 asInvoker, статический CRT, Unicode и
+PerMonitorV2. Не использует WPF/.NET/WebView до выбора каталога. Один внешний EXE
+содержит uncompressed file payload и versioned hash-pinned binary index/footer;
+извлечение только в private уникальный staging выбранного тома. Native проверки
+ограничивают **extraction**, не заменяют решения Installation Coordinator.
+
+`Launcher.InstallHelper` — self-contained non-single-file .NET helper, запускаемый
+native GUI с explicit HANDLE_LIST для stdin/stdout/stderr. Stdout — исключительно
+bounded UTF8 NDJSON (32768 bytes), stderr — `helper.log` в staging. Неполная строка,
+invalid UTF8/schema/unknown/duplicate fields, nonce/SID/requestId mismatch и
+неожиданная response transition не дают успеха. Каждая команда несёт `v=1`, positive
+monotonic `id`, process nonce, `sid`, `command`; только preflight/install используют
+`baseDirectory`. Нет полей executable/hash/product/runtime command line.
+
+Команды: inspect → preflight → install (progress) → success → optional launch;
+cancel передаёт CTS работающей операции. Responses — inspection/preflight/progress/
+typed failure/success/launched. Native state machine требует ordered real Coordinator
+stages, но progress `Completed` **не** активирует успешный экран: необходим отдельный
+typed success с ожидаемыми App/GameData. Exit0/EOF/deadline не заменяют verification.
+Startup/preflight response deadline60s, install inactivity16min; эти UI deadlines
+закрывают IPC/cancel и **не** разрешают очистку intent/rollback или смену Storage Root.
+
+Helper проверяет ordinary non-impersonated SID, parent PID/start ticks/session/token
+при startup и командах, использует Environment LocalAppData этого пользователя.
+Trusted catalog берётся только из payload, проверяет fixed compiled product и каждый
+file hash/size. При install используется прежний lease/intent/Job/completion backend.
+При launch helper повторно проверяет installation под lease, удерживает safe leaf
+EXE handle и освобождает lease **до** запуска для совместимости startup guard.
+Executable строго `<App>\current\MinecraftLauncher.exe`, без произвольных аргументов.
+
+EOF/GUI crash отменяет helper operation; crash самого helper остаётся под existing
+installation intent/Job recovery. Installer Job/Game Job и StorageRootResolver не
+переписаны. Query witness игрового Java Job и lifetime обоих режимов не меняются.
+Подмена executable/tree конкурентным злонамеренным процессом **того же пользователя**
+не объявляется новой security boundary; private ACL и no-reparse leaf checks не
+являются транзакционным filesystem snapshot. Неизвестное состояние fail closed.
+
+Diagnostic helper выбирает отдельный product/LocalData compile-time, без runtime
+production override. Tests/native console/diagnostic vendor host не входят в
+production bundle. Реальные E2E и release gates: [releasing.md](releasing.md).

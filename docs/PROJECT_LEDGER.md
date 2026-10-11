@@ -1,5 +1,22 @@
 # Единый журнал Minecraft Launcher
 
+> Новый этап, 12.10.2026 (UTC+05:00): PR #13 merged, verified origin/feat/v0.6.1
+> `9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`. От этой основы создана
+> `feat/v061-gui-bootstrapper`; main/release/v0.6.0 не изменяются.
+> Реализован Draft native GUI → self-contained helper → прежний Installation Coordinator
+> → Setup161. Полные гарантии, IPC, результаты и ограничения — [releasing.md](releasing.md)
+> и [architecture.md](architecture.md). Состояние публикации — Git/GitHub feature-ветки.
+> Новый полный прогон466/466, build0 errors/warnings; crash filter10/10, native48 checks;
+> format/release-feed tests/изолированный packaging успешны. Эти числа не означают
+> завершение Windows E2E: ordinary GUI smoke заблокирован host EnableLUA=0/elevated
+> token, отказ до staging подтверждён, политика безопасности не менялась.
+> Владелец согласовал manual smoke в обычном пользователе/VM после отчёта.
+> Нет доказательства clean installation C/D, vendor TEMP trace, реального Launcher
+> upgrade/shortcut/uninstall/crash E2E. Update fallback на C: остаётся нерешённым;
+> managed staging cleanup не реализован, retry сохраняет isolated artifacts.
+> Release-ready не объявляется. Дальнейший merge — только после независимого ревью
+> и согласования владельца. Следующие строки — исторические снимки предыдущих этапов.
+
 > GitHub-интеграция PR #10 и PR #11, 11.10.2026 (UTC+05:00).
 > [PR #10](https://github.com/lDiestrol/minecraft-launcher/pull/10) объединён обычным merge:
 > `cc30be0e1eb88262485aabb977d4e3f828e1ef84` в `feat/v0.6.1`.
@@ -505,6 +522,23 @@ code signing и срок; частые реальные диагностичес
 Необходимость ADR и машинной release checklist — предложения, не scope v0.6.1.
 
 ## 11. Журнал работ
+
+12.10.2026: native toolchain подготовлен по разрешению владельца из официального
+Microsoft installer: Build Tools2022 17.14.41, MSVC19.44.35229, linker14.44.35229,
+SDK/RC10.0.26100.0; C: до установки свободно417852006400 bytes, exit0 без reboot.
+Minimal /MT Win32 probe подтверждает UTF16/asInvoker; .NET SDK/Velopack не обновлялись.
+Fetch успешен, baseline PR13 подтверждён; новая отдельная GUI-ветка.
+Добавлены helper/protocol/catalog/native extraction/state machine, packaging wrapper,
+25 xUnit cases, native48 checks и developer-only diagnostic E2E harness.
+Изменение backend ограничено internal compiled product binding для отдельного
+diagnostic PackId; default product, Server/Singleplayer, Storage Root/Java guardian
+не меняются. Restore/build/full466/466/format/release-feed/package проверены заново.
+Прямой GUI и обычный Explorer invocation отказали с elevated-token до любых
+install writes; подтверждён EnableLUA=0. Никакие Windows security settings не менялись.
+Владелец согласовал внешний ordinary-session smoke; его результаты пока отсутствуют.
+Draft готовится для независимого ревью с незакрытым E2E и fallback release gate,
+не для автоматического merge/релиза. Author Ivan/noreply согласован только для команд
+этого этапа, без изменения Git config. Полная проверка данных на D/VHDX не заявляется.
 
 | Дата (UTC+05:00) | Работа / свидетельство |
 | --- | --- |
