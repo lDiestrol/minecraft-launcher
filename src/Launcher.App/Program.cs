@@ -1,6 +1,7 @@
 using Velopack;
 using Launcher.Infrastructure.Game;
 using Launcher.Infrastructure.Persistence;
+using Launcher.Infrastructure.Installation;
 
 namespace Launcher.App;
 
@@ -23,9 +24,15 @@ internal static class Program
             return;
         }
 
-        VelopackApp.Build()
-            .SetAutoApplyOnStartup(false)
-            .Run();
+        if (InstallationStartupGuard.TryAcquireVelopackStartup(args, out IDisposable? startupLease))
+        {
+            using (startupLease)
+            {
+                VelopackApp.Build()
+                    .SetAutoApplyOnStartup(false)
+                    .Run();
+            }
+        }
 
         App application = new();
         application.InitializeComponent();

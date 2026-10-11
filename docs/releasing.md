@@ -20,12 +20,13 @@
 
 Application install root Velopack и постоянный data root различны: `%LOCALAPPDATA%\lDiestrol.MinecraftLauncher` и `%LOCALAPPDATA%\MinecraftLauncher`. В installer входят только publish-файлы приложения. Minecraft, Fabric, Java, assets, libraries, instances, mods/config, settings и cache не входят.
 
-## Контролируемое обновление SDK/vpk 1.2.161, 11.10.2026
+## Историческое контролируемое обновление SDK/vpk 1.2.161, 11.10.2026
 
 Отдельно согласовано после архитектурного исследования: App, Infrastructure,
 test-only UpdateE2EHarness и repository-local vpk закреплены на 1.2.161.
 Версия приложения остаётся 0.6.0; PackId/MainExe/GithubSource/stable/dev и layout
-не менялись. Installer/Coordinator не создаются. История исследования158 сохранена ниже.
+не менялись. На этом историческом этапе Installer/Coordinator не создавались.
+Последующая реализация Coordinator описана ниже; история исследования158 сохранена.
 Причина обновления и upstream change — [release 1.2.161](https://github.com/velopack/velopack/releases/tag/1.2.161);
 это не доказательство совместимости настоящей пользовательской установки.
 
@@ -70,6 +71,135 @@ release gate: такой upgrade, оба режима/guardian/world/settings и
 Fallback locator на LocalAppData при unwritable App остаётся отдельным Coordinator
 preflight/fault-injection требованием, SDK upgrade его не устраняет. UAC/cross-user,
 GUI/MSI, low-space и настоящий D:/VHDX packaging здесь не проверены.
+
+## Installation Coordinator: контракт следующего bootstrapper
+
+Основа — объединённый [PR #12](https://github.com/lDiestrol/minecraft-launcher/pull/12),
+feat/v0.6.1 `c5b1f66c468685d92b90024cbba0f3744609012c`. SDK/vpk161, application version,
+PackId/MainExe/stable/dev/GithubSource не меняются. Coordinator не является готовым GUI,
+не добавляет entry point установщика и не заменяет обычный update flow.
+Managed API и installation lease описаны в [architecture.md](architecture.md).
+
+Следующий native GUI должен запуститься asInvoker под исходным пользователем, получить
+его SID, предложить выбранный локальный volume/base и извлечь доверенный self-contained
+**не single-file** helper и payload в dedicated staging выбранного тома. Не извлекать
+крупный .NET bundle в C: до выбора пути. Helper работает вне заменяемого App, вызывает
+Inspect/Preflight/InstallAsync и возвращает result/progress/errors по отдельно согласуемому
+IPC. Elevated и impersonated контексты запрещены, SID должен совпасть. Русская UI
+оболочка должна показывать Busy/ExistingInstallation/ACL/Space/Recovery без fallback.
+
+Перед стартом: full package manifest, Setup SHA256, package SHA256 и отдельный ожидаемый
+Update.exe SHA256 должны быть закреплены доверенным локальным release catalog. Публичный
+full `.nupkg` не обязательно содержит updater; его hash нельзя выдумывать из package
+entry. Каталог должен учитывать фактический output vpk, в том числе icon/signing.
+Сейчас catalog generation/distribution не реализованы и production payload не устанавливался.
+Не брать path/hash/launch arguments из bootstrap/profile/manifest игрового сервера.
+
+Схема новой установки — выбранный base/App и base/GameData, временные копии в
+base/.launcher-install/<unique token>. Проверяются local fixed/removable volume,
+containment/reparse/system/temp intersections, свободное место с reserve и возможность
+записи в App/packages/VelopackTemp и небольшом Control. Проверка не резервирует место и
+не исключает потерю тома/прав после preflight. При legacy/configured data root сохраняется
+старый путь; неизвестная непустая App/другая зарегистрированная установка не заменяется.
+Unmanaged v0.6.0 App пока получает безопасный отказ: её in-place upgrade/adoption требует
+отдельного дизайна и E2E, не автоматического переноса или второй установки одного PackId.
+
+Coordinator serializes Setup с Launcher/guardian/game через storage lease и durable
+intent. Прерванную операцию повторяют с теми же canonical paths и доверенным package.
+Нет автоматического удаления App/GameData, миров, backup или rollback locator.
+Повреждённый/unknown intent, живой owner/Job и access-denied остаются заблокированы.
+Execution timeout/cancel останавливают только новый installer tree и не подтверждают успех.
+Успех — проверенные installed layout/root, обязательная HKCU-регистрация и durable
+completion успешного native Setup после exit0/installer-tree rundown, не предварительный
+receipt и не один exit0. Recovery не снимает pending gate до этой проверки. Pending gate блокирует обычный
+SDK startup; отдельный install hook допускается только внутри соответствующего Job.
+
+### Исправления ревью PR #13, 12.10.2026
+
+Staging/GameData overlap отвергается до intent/locator, включая equal/ancestor/descendant,
+и повторно под lease. Полные файлы без HKCU/completion требуют повторного Setup, не
+AlreadyInstalled. Registry verifier сверяет точный PackId/App, manifest title/authors,
+major.minor.patch DisplayVersion, точные Update uninstall commands и обязательные поля.
+Пользовательские shortcuts необязательны. Чужой registered App получает безопасный отказ.
+
+Velopack161 переименовывает непустой App в App.<random16>; best-effort backup cleanup
+может не завершиться. Порядок подтверждён pinned [Setup161 source](https://github.com/velopack/velopack/blob/1.2.161/src/bins/src/commands/install.rs),
+поля HKCU — [registry161 source](https://github.com/velopack/velopack/blob/1.2.161/src/bins/src/windows/registry.rs).
+Для точно связанных receipt/intent либо receipt/completion retry
+доступен с оставшимися обычными siblings. Ни backup, ни чужие siblings не становятся
+managed-файлами и не удаляются. Чистая установка остаётся строгой, App.* сам по себе
+не доказывает ownership, reparse siblings запрещены.
+
+В новом ignored lab `artifacts/install-review-20261012` создан отдельный diagnostic
+PackId `MinecraftLauncher.InstallReview.20261012`, SDK/vpk161, win-x64, dev0.0.1, без
+shortcuts. Настоящий Setup запущен production WindowsInstallationJob, helper paused в
+install hook после распаковки, но до HKCU. Принудительное завершение installer tree
+оставило полный layout без регистрации; повторная авария после vendor rename оставила
+rollback siblings. Следующий Setup с открытым no-delete handle тестового backup завершился
+exit0, backup остался, production registry verifier принял реальную регистрацию.
+Diagnostic uninstall exit0 удалил только diagnostic App/HKCU; retained backups, источники
+и logs оставлены. Контрольные world/locator SHA256 неизменны.
+
+Это component/vendor fault-injection, не production Coordinator E2E: diagnostic PackId
+не принимается hardcoded Launcher backend. Переход immediately-after-rename не пойман:
+повторная авария выполнена позже, в install hook. Реальный ACL отказ записи HKCU не
+инъецировался; repeated registration failure покрыт filesystem/injected-registry tests.
+
+### Безопасное обслуживание неопределённых установочных метаданных
+
+Обычный путь — повторить установку тем же доверенным package и canonical base; при живом
+owner/Job дождаться фактического завершения, не применять timeout для снятия защиты.
+Если receipt/intent/completion отсутствуют, повреждены или противоречат друг другу:
+
+1. Не удалять gate, App, GameData или App.* и не запускать Setup вручную поверх них.
+   Сохранить копии Control и установочных logs для диагностики, пользовательские данные
+   оставить на месте.
+2. Под exclusive installation lease достоверно проверить owner PID/start time, installer
+   Job и активные игровые сессии. Denied/unknown запрещает обслуживание.
+3. Сверить canonical paths, trusted package hash и идентичность операции с сохранёнными
+   достоверными метаданными. Восстановить повреждённую запись только из проверенной копии
+   той же операции, затем повторить обычный Coordinator retry. Не создавать completion
+   из одного файлового layout/HKCU и не считать имя App.* доказательством владения.
+4. Без такой копии/доказательства остановиться для отдельно согласованного обслуживания;
+   API не умеет безопасно принимать неизвестный App. Восстановление не должно уничтожать
+   данные и не выполняется автоматически этим PR.
+
+Это ограничение crash между отдельными atomic metadata writes, а не обещание общего
+transactional rollback. GUI для обслуживания метаданных здесь не реализуется.
+
+**Открытый release risk:** Velopack может выбрать LocalAppData для больших update
+downloads после потери доступа к App/packages. Coordinator preflight/TEMP/TMP не
+устраняет этот SDK fallback. Перед release требуется отдельный fail-closed updater guard
+и fault injection/trace. Не обещать «все writes/updates только D:» на основании этого PR.
+Unique Setup staging/logs пока сохраняются; безопасная bounded cleanup должна быть
+согласована отдельно и не касаться GameData. Native GUI/extraction, unattended policy,
+AuthentiCode и uninstall UX также не входят в этот этап.
+
+### Реальные изолированные проверки 11.10.2026
+
+Windows11 25H2 build26200, диагностический PackId
+`MinecraftLauncher.InstallCoordinator.20261011`, dev0.0.1, без shortcuts, не Launcher.
+Новый self-contained host упакован настоящим vpk161. Native Setup161 установлен в
+ignored artifacts на C: с кириллицей/пробелами через самостоятельный atomic installer-job
+prototype: test owner принудительно завершён в install hook, Setup остался жив,
+Job ActiveProcesses=3; после release hook Setup exit0 и имя Job исчезло. App/current/
+packages/Update.exe161 созданы. Release и installed full package имеют разные имена,
+но **одинаковый SHA256**. Update161 измерен отдельно и совпал с vendor-no-icon updater.
+Штатный silent uninstall exit0 удалил только diagnostic App; источники/feed/logs сохранены.
+Это не E2E всего production Coordinator и не installed Launcher0.6.0 →0.6.1.
+
+Отдельный native prototype: 30/30 повторов main installer + handleless child после
+crash owner. Child без witness оставался внутри Job; закрытие последнего witness
+прекращало этот installer tree, имя не исчезало при наблюдаемом живом child.
+Эти 30 повторов не входят в xUnit count и не доказывают поведение на всех Windows.
+Production installer Job не изменяет Minecraft Job/no-kill lifetime.
+
+Следующие gates: Windows10/11 VM, реальный обычный пользователь/UAC/другой SID,
+restrictive/nested jobs, новый isolated D: и disposable VHDX copy, quotas/full C:/D:,
+ACL/detached volume/antivirus, hangs и cancel vendor Setup, trace actual writes,
+uninstall/reinstall с world/settings hashes, in-place stable update/full/delta и оба
+game modes. Текущий VHDX/`D:\MinecraftLauncher\GameData` и production не использовать
+для destructive tests. Графический installer не release-ready до этих проверок.
 
 ## Историческое исследование следующего GUI installer, 11.10.2026
 
