@@ -5,7 +5,7 @@
 
 ## Проекты и зависимости
 
-**Локальная интеграция PR #10/#11:** Server/Singleplayer используют общий pipeline;
+**Совместная реализация PR #10/#11:** Server/Singleplayer используют общий pipeline;
 Storage Root review завершён до публикации PR #11. Intent v3/witness v1 интегрирован
 после реальных Java17/21 crash checks. Основная JVM наследует
 query-only Job handle; отсутствие имени допускает recovery только по этому versioned

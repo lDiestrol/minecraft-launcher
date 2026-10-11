@@ -1,8 +1,8 @@
 # Запуск игры: стабильная основа v0.6.0 и реализация v0.6.1 для review
 
 Актуальный статус и планы launch modes: [PROJECT_LEDGER.md](PROJECT_LEDGER.md).
-Общий поток реализован в стабильной основе. Два режима и Storage Root объединены
-локально в `test/v061-pr10-pr11-integration` от `origin/feat/v0.6.1`; это ещё не выпуск
+Общий поток реализован в стабильной основе. Два режима и Storage Root совместно
+реализованы в PR #10/#11 с эталоном `test/v061-pr10-pr11-integration`; это ещё не выпуск
 v0.6.1. Версия приложения и зависимости остаются прежними.
 
 ## Режимы одного профиля
@@ -29,8 +29,9 @@ profile id, Minecraft/Fabric, nickname, RAM и данные исходного �
 это не автономный offline-режим без launcher server. Совместимость конкретного
 серверного модпака с локальными мирами требует отдельного реального smoke-теста.
 
-Исходные [Draft PR #10](https://github.com/lDiestrol/minecraft-launcher/pull/10) и
-[Draft PR #11](https://github.com/lDiestrol/minecraft-launcher/pull/11) остаются открытыми.
+История [PR #10](https://github.com/lDiestrol/minecraft-launcher/pull/10) и
+[PR #11](https://github.com/lDiestrol/minecraft-launcher/pull/11) сохранена;
+актуальные GitHub merge/HEAD и проверки — в Ledger и PR, не в этом техническом контракте.
 `<GameData>` для обоих режимов определяется общим StorageRootResolver
 для App/guardian; legacy/default — `%LOCALAPPDATA%\MinecraftLauncher`.
 
@@ -38,8 +39,9 @@ profile id, Minecraft/Fabric, nickname, RAM и данные исходного �
 
 Локальный guardian использует crash-safe intent v3/witness v1 и атомарный JOB_LIST,
 QUERY witness наследуется основной JVM через explicit HANDLE_LIST. Защита и восстановление
-проверены в истории PR #11 с реальными Java17/21. Новый совместный прогон и ограничения
-Minecraft smoke/installed update приведены в [PROJECT_LEDGER.md](PROJECT_LEDGER.md).
+проверены с реальными Java17/21. Владелец подтвердил Minecraft/Fabric smoke обоих режимов
+на legacy C: и custom NTFS D:; это не installed update E2E. Прогоны и ограничения —
+в [PROJECT_LEDGER.md](PROJECT_LEDGER.md).
 
 1. Выбранный `GameProfile` и явный режим преобразуются в `GameLaunchRequest`. Проверяются допустимость режима, profile id, версии, Fabric, nickname, RAM и server address.
 2. `LauncherOperationCoordinator` получает профильную межпроцессную блокировку и выполняет Pack Manifest v1 sync: полный SHA-256, загрузка/проверка staging, публикация и managed cleanup. При ошибке pack Minecraft не запускается; Repair заканчивается после этого этапа.

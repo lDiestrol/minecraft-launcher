@@ -1,19 +1,23 @@
 # Единый журнал Minecraft Launcher
 
-> Локальная совместная интеграция PR #10 и PR #11, 11.10.2026 (UTC+05:00).
-> Ветка: `test/v061-pr10-pr11-integration`, от `origin/feat/v0.6.1`
-> `52ee0d8d151e7e55327c20376a9678e78b3cc5c1`. Сначала PR #10, затем PR #11.
-> Публичные [Draft PR #10](https://github.com/lDiestrol/minecraft-launcher/pull/10)
-> и [Draft PR #11](https://github.com/lDiestrol/minecraft-launcher/pull/11) открыты, не merged.
-> Их исходные ветки не изменяются; новая ветка не отправляется в origin.
-> Два режима используют общий pipeline и trusted GameData с intent v3/witness v1.
+> GitHub-интеграция PR #10 и PR #11, 11.10.2026 (UTC+05:00).
+> [PR #10](https://github.com/lDiestrol/minecraft-launcher/pull/10) объединён обычным merge:
+> `cc30be0e1eb88262485aabb977d4e3f828e1ef84` в `feat/v0.6.1`.
+> [PR #11](https://github.com/lDiestrol/minecraft-launcher/pull/11) адаптирован к этой основе
+> без переписывания истории. Его статус/merge SHA и итоговый HEAD определяются по GitHub,
+> [интеграционной ветке](https://github.com/lDiestrol/minecraft-launcher/tree/feat/v0.6.1) и Git.
+> Эталон smoke сохранён: `test/v061-pr10-pr11-integration`, HEAD `a9f8642`.
+> Production-код обоих режимов и intent3/witness1 должен совпадать с этим эталоном.
 > Исторические отдельные прогоны: PR #10 **280/280**, PR #11 **340/340**;
-> новый совместный прогон: **372/372** (Core 353 + App 19), 0 failed/skipped.
-> Restore/build/format успешны; build 0 warnings/errors. Повторные JVM checks: **16/16**.
-> Minecraft/Fabric smoke ещё не выполнен; владелец согласовал ручную проверку после отчёта.
+> проверенная локальная интеграция **372/372**, JVM checks **16/16** — предыдущий этап.
+> После адаптации выполнен новый полный прогон **372/372**, crash/recovery **23/23**;
+> restore/build/format успешны, build 0 warnings/errors. Production/tests идентичны эталону.
+> Владелец подтвердил реальный Minecraft/Fabric smoke на Windows11: legacy C: и custom
+> NTFS D:, оба режима, сохранение мира после JVM restart, Repair без изменения level.dat,
+> защита занятого профиля и освобождение после выхода; см. раздел 12.
 > `main` сохраняет v0.6.0, SHA `bd98ecd721298981508d54466d11089c1647ab4f`.
-> Разрешены только локальные merge/integration-коммиты в тестовой ветке.
-> GitHub merge/push/tag/release запрещены. Installer не создаётся.
+> Разрешены commits/обычный push ветки PR #11 и merge обоих PR только после проверок.
+> Main/release/tag/Release не менять. Installer не создаётся, test-ветка/VHDX сохраняются.
 
 ## 1. Назначение и источник состояния
 
@@ -51,7 +55,7 @@ Minecraft Launcher — публичный Windows x64 клиент на .NET 10 
 | --- | --- |
 | Origin | `https://github.com/lDiestrol/minecraft-launcher.git` |
 | Стабильная ветка | `main`, verified `origin/main` — `bd98ecd721298981508d54466d11089c1647ab4f`; текущий feature HEAD отслеживается отдельно |
-| Интеграционная ветка | `feat/v0.6.1`, verified `origin/feat/v0.6.1` — `52ee0d8d151e7e55327c20376a9678e78b3cc5c1`; включает объединённые [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8) и [PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9) |
+| Интеграционная ветка | `feat/v0.6.1`; текущий HEAD — [GitHub](https://github.com/lDiestrol/minecraft-launcher/tree/feat/v0.6.1)/Git. Основа адаптации Storage Root после merge PR #10 — `cc30be0e1eb88262485aabb977d4e3f828e1ef84`; прежний baseline PR #8/#9 — `52ee0d8` |
 | Verified main | [bd98ecd721298981508d54466d11089c1647ab4f](https://github.com/lDiestrol/minecraft-launcher/commit/bd98ecd721298981508d54466d11089c1647ab4f) |
 | Стабильный release | [v0.6.0](https://github.com/lDiestrol/minecraft-launcher/releases/tag/v0.6.0), GitHub API: `draft=false`, `prerelease=false`, опубликован 09.10.2026 |
 | Release tag/target | [1ae3ae74b1b70d92031fe8706f80f85e506efd56](https://github.com/lDiestrol/minecraft-launcher/commit/1ae3ae74b1b70d92031fe8706f80f85e506efd56) |
@@ -63,7 +67,7 @@ Tag релиза и verified main различаются: после релиз�
 документация через PR #7. `git diff v0.6.0..origin/main` показывает только документацию.
 Названия старых feature/release-веток не задают актуальную основу разработки.
 
-Проверенный снимок Git/GitHub на 11.10.2026: `origin/main` — `bd98ecd`,
+Исторический снимок перед локальной интеграцией, 11.10.2026: `origin/main` — `bd98ecd`,
 `origin/feat/v0.6.1` — `52ee0d8`,
 `origin/release/v0.6.0` — `e426ecb`. [PR #8](https://github.com/lDiestrol/minecraft-launcher/pull/8)
 объединён в `feat/v0.6.1` с merge commit `c31c982`; [PR #9](https://github.com/lDiestrol/minecraft-launcher/pull/9)
@@ -71,7 +75,9 @@ Tag релиза и verified main различаются: после релиз�
 Обе feature-ветки созданы независимо от этой основы.
 Проверены опубликованные heads: PR #10 `c604955d7ad484b165e3cbe25a61c94d4d198e70`,
 PR #11 `c0a37e1964f195b53c9b6c7d8d2c9c86bbea89f6`.
-Согласована отдельная локальная тестовая интеграция; исходные PR остаются Draft.
+На том этапе согласована только локальная test-интеграция; исходные PR оставались Draft.
+Позже владелец подтвердил smoke и разрешил GitHub-интеграцию. PR #10 merged (`cc30be0`);
+PR #11 содержит проверенные разрешения конфликтов/test adaptations и актуальную основу.
 Статусы PR и HEAD изменяемы; перед следующей работой их следует проверить заново.
 
 Согласованная 10.10.2026 Git-стратегия: main сохраняет стабильную v0.6.0;
@@ -79,8 +85,9 @@ PR #11 `c0a37e1964f195b53c9b6c7d8d2c9c86bbea89f6`.
 разрешённой задачи. Полностью завершённая v0.6.1 позже переносится в main одним
 Squash & Merge после явного согласования владельца. Объединение PR #9 подтверждено
 чтением GitHub API. Для одиночного запуска владелец разрешил один commit, обычный
-push feature-ветки и Draft PR. Теперь отдельно разрешены локальные merge-коммиты
-только в новой test-ветке; GitHub merge, push этой ветки, tags и Release запрещены.
+push feature-ветки и Draft PR. Затем отдельно разрешены локальные merge-коммиты
+в test-ветке, позже — обычный push PR #11 и GitHub merge PR #10/#11 после проверок.
+Публикация test-ветки не требуется; tags/Release и изменение main/release запрещены.
 
 ## 3. Версии и отдельные направления
 
@@ -92,7 +99,7 @@ push feature-ветки и Draft PR. Теперь отдельно разреш�
 | 0.4.0-rc.1 / 0.5.0-rc.1 | Исторические release notes | Сохранены в Git; публикация этих RC сейчас отдельно не проверялась |
 | v0.5.0 | Завершён, исторический stable | Tag `v0.5.0`, commit `c0e3990`; основа проверенного ранее installed update |
 | v0.6.0 | Текущий stable, опубликован | Dark Gaming UI, profile file management, locks/guardian, app updates и release tooling |
-| v0.6.1 | Совместная реализация в локальной тестовой ветке, не выпущен | Server/Singleplayer из PR #10 + Storage Root/crash-safe guardian из PR #11. GUI installer и clean-install/installed update E2E остаются release gates |
+| v0.6.1 | Совместная реализация PR #10/#11, не выпущен | Server/Singleplayer + Storage Root/crash-safe guardian; пользовательский legacy/custom Minecraft smoke подтверждён. GUI installer и clean-install/installed update E2E остаются release gates |
 | v0.6.2 | Scope пересмотрен владельцем, запланирован | Компактный адаптивный Dashboard, оконный/maximized UX, ScrollBar, карточки, точный RAM, Server List Ping и реальные players/slots, статусы/ошибки |
 | v0.6.3 | Согласован, запланирован | Storage Manager: размеры, безопасное удаление и shared cleanup, перенос данных и отдельные каталоги профилей |
 | v0.7.0 | Согласован, запланирован | Несколько серверных источников, source-aware profile identity, каталог/поиск/избранное, управление сборками и совместимое развитие news/feed |
@@ -283,7 +290,8 @@ release feed/packaging и installed update новой версии. Версии
 Ограничения: один root на пользователя для installed/portable/development;
 унаследованные per-user права Control, без all-users installer support. Не обещается
 защита от произвольного same-user tampering/TOCTOU или полный pack rollback.
-Реальные Minecraft/custom-directory install/update E2E ещё не выполнялись.
+Пользовательский Minecraft smoke legacy C:/custom NTFS D: подтверждён (раздел 12).
+Custom-directory install/update E2E ещё не выполнялись.
 Следующий PR должен выбрать GUI-путь и связать его с initial ConfigureNewRoot до
 первого запуска под правильным пользователем. Pinned Velopack capabilities/deprecation
 и предложение отдельного upgrade approval: [releasing.md](releasing.md).
@@ -447,10 +455,10 @@ WindowChrome, IsEnabled, Focusable и действия кнопок сохран
 
 ## 10. Нерешённые вопросы
 
-Перед v0.6.1: review совместной интеграции PR #10/#11 и ручной Minecraft smoke;
+Перед v0.6.1: завершение согласованной GitHub-интеграции PR #10/#11;
 совместимый GUI installer и реализация согласованного root/legacy contract в нём
-(раздел 5.2). Пользователь подтвердил main menu/server connect; создание/сохранение мира
-и сохранность данных ещё требуют проверки. Реальные clean-install на выбранном диске,
+(раздел 5.2). Владелец подтвердил оба режима, сохранение мира/restart и Repair в legacy/custom root.
+Реальные clean-install на выбранном диске,
 packaging и installed update v0.6.0 → v0.6.1 не выполнены. CmlLib options/arguments
 и compact 900×650/DPI ранее проверены автоматическими тестами.
 
@@ -505,8 +513,8 @@ code signing и срок; частые реальные диагностичес
 | 11.10.2026 | Владелец согласовал сначала самостоятельный прототип уточнённого A: query-only witness через HANDLE_LIST одновременно с JOB_LIST. Создан отдельный tests/StorageRoot.JobPrototype без зависимостей на Launcher и без включения в solution/packaging. Реальная managed Java 25.0.1 сохранила handle с access 4 и пережила аварийное завершение owner; независимый query process открыл Job. Обычный Java ProcessBuilder передал этот же private handle дочерней Java с access 4. По условию владельца реализация остановлена до интеграции и обходных изменений. Наследование в descendant само по себе не доказывает выход из Job или нарушение сохранности данных; строгая граница «только исходная Java» не подтверждена |
 | 11.10.2026 | Затем владелец явно разрешил QUERY witness в descendants того же Job. Самостоятельный prototype расширен: реальные Java 8/25 в трёх crash-фазах, immediate crash до JVM-ready, список PID/членство/права/flags, canary и unrelated process от того же owner, наследующий descendant и direct handleless child (Java 25 FFM), nested/restrictive Job, DACL denial и name collision. Живая основная JVM не потеряла witness. Handleless descendant остался жив внутри Job после JVM exit, но имя исчезло. Это допустимо отмечаемая граница защиты дерева, а не повтор прежнего запрета наследования; безопасная автоматическая очистка pre-PID intent не доказана. Уточнённый witness не интегрирован, production diff и SR-002/SR-003 сохранены. Подробные новые результаты ниже |
 | 11.10.2026 | После предыдущего stop владелец явно согласовал recovery при отсутствующем Job и завершённом guardian для подтверждённого witness-контракта основной JVM. Проверены Java 17/21, интегрированы intent v3/witness v1 и атомарный запуск со stdio + QUERY witness. Реальные production-guardian crash/recovery checks прошли; legacy/unknown intents и AccessDenied fail-closed. Сохранены SR-002/SR-003, исправлен точный exception contract ProfileFileManagerTests без ослабления containment/reparse проверок; новые результаты 340/340 ниже. Никакой публикации или интеграции PR #10 |
-
-| 11.10.2026 | После публикации PR #11 владелец согласовал локальную совместную интеграцию PR #10 → PR #11 в отдельной test-ветке от 52ee0d8. Три конфликта разрешаются по смыслу: оба режима + trusted root/shared mapping; история Storage Root review и roadmap сохраняются. Никакого изменения оригинальных PR или GitHub merge |
+| 11.10.2026 | После публикации PR #11 владелец согласовал локальную совместную интеграцию PR #10 → PR #11 в отдельной test-ветке от 52ee0d8. Три конфликта разрешены по смыслу: оба режима + trusted root/shared mapping; история Storage Root review и roadmap сохранены. На том этапе оригинальные PR не менялись, GitHub merge не выполнялся |
+| 11.10.2026 | Владелец подтвердил реальный Windows11 smoke на legacy C: и custom NTFS D: через ConfigureNewRoot, оба режима, Fabric/Java/mods на D:, сохранение мира StorageRoot-Test после полного JVM restart, Repair с неизменным SHA-256 level.dat, конфликтующие Launcher и recovery. Затем разрешил commit/push/merge PR #10/#11; PR #10 объединён обычным merge cc30be0. PR #11 адаптируется через сохранённую эталонную test-ветку с проверкой идентичности production-кода и новым regression; installer не начинается |
 
 SHA собственных документационных коммитов в Ledger не записываются;
 их следует проверять по Git и истории PR.
@@ -526,7 +534,46 @@ PR #11 опубликован как Draft в feat/v0.6.1; его HEAD подт�
 
 ## 12. Последние проверки
 
-### Совместная локальная интеграция PR #10 → PR #11, 11.10.2026
+### GitHub-интеграция после подтверждённого smoke, 11.10.2026
+
+PR #10 переведён из Draft и объединён merge-коммитом `cc30be0` только в feat/v0.6.1.
+Ветка PR #11 fast-forward до сохранённого эталона `a9f8642`, затем merge актуального
+origin/feat/v0.6.1: published c0a37e1 остаётся предком, история не переписана.
+Перенесены три semantic resolutions (CmlLib/game-launch/Ledger), дополнительные
+CmlLib root/mode и StorageRootCrash tests, architecture. Новых изменений поведения нет.
+Test-ветка сохранена неизменной; VHDX не монтировался/не удалялся/не изменялся агентом.
+
+| Новый прогон после адаптации | Результат |
+| --- | --- |
+| Production/smoke reference | git diff --exit-code a9f8642 -- src tests Directory.Build.props .config .github scripts: exit0. Production-код и тесты совпадают с пользовательской smoke-сборкой; отличаются только документационные записи |
+| Restore | dotnet restore MinecraftLauncher.sln: успешно |
+| Build | dotnet build MinecraftLauncher.sln --no-restore: 0 warnings/errors |
+| Полный xUnit | **Core 353 + App 19 = 372/372**, 0 failed/skipped; новый прогон, не предыдущий результат |
+| Crash/recovery повтор | **23/23**: шесть реальных crash-process cases и 17 recovery cases, 0 failed/skipped |
+| Format | dotnet format MinecraftLauncher.sln --verify-no-changes --no-restore: exit0 |
+| JVM opt-in checks | Предыдущие 16/16 на идентичном guardian/production коде; в этом публикационном этапе не повторялись и не обозначаются новым прогоном |
+| GitHub review | PR #10 на контрольном HEAD: 14 файлов, нет новых comments/reviews/unresolved threads. Локальный diff PR #11 к обновлённой базе: 40 файлов — Storage Root + согласованные adaptations, без повторных изменений UI/Core PR #10; опубликованный diff дополнительно сверяется перед merge |
+| GitHub CI | Для исходного PR #10 нет statuses/workflow runs. Текущий workflow запускается только для main; локальные результаты не выдаются за CI |
+| Git/Markdown | 17 Markdown-документов и 81 внутренняя файловая ссылка проверены; fences/targets/секреты/diff-check чистые. Нет binaries/build outputs/удалений. Итоговый опубликованный diff сверяется с проверенным tree перед merge; main/release/tag/Release не меняются |
+
+Пользовательское свидетельство владельца, Windows11 (не агентский прогон):
+
+- Legacy GameData C:: Server и Singleplayer работают, мир сохраняется после полного
+  JVM restart; закрытие Launcher не завершает Minecraft, второй Launcher блокирует
+  занятый профиль, после выхода Minecraft блокировки освобождаются.
+- Custom `D:\MinecraftLauncher\GameData` на виртуальном NTFS: root назначен через
+  ConfigureNewRoot; settings/logs, Minecraft/Fabric/Java/libraries/mods находятся на D:.
+  Оба режима работают, мир `StorageRoot-Test` сохраняется после JVM restart;
+  Repair не изменил SHA-256 level.dat, конфликтующий Launcher блокируется,
+  после завершения игры профиль доступен. `C:\LauncherVHDTest\TestDisk.vhdx` сохраняется.
+
+Результаты smoke применимы потому, что production-код идентичен эталону. Installed
+update/packaging/GUI installer, real SMB mapped drive и cross-session/UAC ещё не доказаны.
+Гарантия lifetime — основная JVM; согласованное исключение handleless descendant после
+main exit сохранено. Автоматическая v0.6.0 migration/новый UI/RAM/SDK/protocol не добавлены.
+Состояние merge PR #11/итоговый HEAD проверяется по PR/GitHub, а не предполагается заранее.
+
+### Историческая совместная локальная интеграция PR #10 → PR #11, 11.10.2026
 
 Новый прогон выполнен на объединённом коде, а не переиспользован из отдельных PR.
 Исходное дерево чистое; original PR heads и main/integration/release refs не изменены.
@@ -556,7 +603,7 @@ end-to-end запуск Minecraft из UI в обоих режимах. Не з�
 drive, другая interactive Windows session/UAC, новый installed update или защита
 произвольных потомков без witness после main exit. Таймаутной очистки/fallback нет.
 
-Ручной smoke (владелец подтвердил участие после отчёта):
+Исторический сценарий ручного smoke, предложенный до пользовательского подтверждения:
 
 1. Отдельный Windows-пользователь/VM без существующих MinecraftLauncher/Control данных,
    App вне тестового GameData. До первого запуска назначить пустой локальный test root
@@ -578,8 +625,9 @@ drive, другая interactive Windows session/UAC, новый installed update
 
 Вердикт локальной автоматической интеграции: **READY TO INTEGRATE** — подтверждённых
 неустранённых safety/data-loss/launch regressions не выявлено. Это не разрешение GitHub
-merge и не release readiness. Ручной Minecraft/Fabric smoke согласован после отчёта;
-его результат пока отсутствует. Исходные PR/ветки остаются неизменными, новая test-ветка
+merge и не release readiness. На тот момент ручной smoke был согласован после отчёта,
+результат ещё отсутствовал (последующее подтверждение записано выше). Исходные PR/ветки
+на локальном этапе оставались неизменными, новая test-ветка
 сохраняется только локально. Историю двух feature-веток сохраняют два no-ff merge-коммита;
 их SHA проверяются по Git, не дублируются в собственном документе.
 
@@ -942,17 +990,14 @@ Guardian crash по-прежнему сообщает Launcher ошибку на
 
 ## 13. Следующие действия и миграция документов
 
-1. Новый совместный restore/build/test/format и crash/JVM проверки завершены успешно.
-   Сохранить только локальную test-ветку для review; не менять PR #10/#11 и не отправлять её.
-2. Выполнить отдельный Minecraft/Fabric smoke в изолированных тестовых данных:
-   оба режима, actual cwd, Fabric/mods, создание/повторное открытие мира.
-   Пользовательский smoke PR #10 не подтверждает текущую совместную сборку.
-3. После отдельного разрешения: PR #10 → feat/v0.6.1, затем перенести проверенные
-   semantic conflict resolutions в PR #11 с повторным review и новым regression.
-   Не использовать слепой ours/theirs и не считать локальную test-ветку GitHub merge.
-4. Installer — отдельная задача: GUI/SDK approval, per-user locator, clean D:/почти
+1. Совместный код проверен новым full/crash regression и подтверждён владельцем
+   Minecraft smoke legacy/custom root. PR #10 merged; PR #11 адаптирован/проверен,
+   его конечный merge-статус и итоговый feat/v0.6.1 HEAD смотреть в Git/GitHub.
+2. Test-ветку a9f8642 и пользовательский VHDX сохранить. Main/release не изменять;
+   tags/Release/force push запрещены. После согласованной GitHub-интеграции остановиться.
+3. Installer — следующая **отдельно согласуемая** задача: GUI/SDK approval, per-user locator, clean D:/почти
    полный C:, packaging и installed v0.6.0 update с сохранностью worlds/settings.
-5. UI/UX/RAM/ping — v0.6.2; Storage Manager — v0.6.3; несколько источников — v0.7.0.
+4. UI/UX/RAM/ping — v0.6.2; Storage Manager — v0.6.3; несколько источников — v0.7.0.
    Старые status/roadmap/handoff не удаляются, Pack Manager независим.
 
 Информация [PROJECT_STATUS.md](PROJECT_STATUS.md), [ROADMAP.md](ROADMAP.md) и
