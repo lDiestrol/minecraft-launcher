@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Launcher.Core.Models;
 using Launcher.Core.Services;
+using Launcher.Infrastructure.Persistence;
 
 namespace Launcher.Infrastructure.Game;
 
@@ -11,6 +12,10 @@ public static class GameLaunchErrorMapper
 
     public static GameLaunchException Map(Exception exception, GameLaunchStage stage)
     {
+        if (exception is StorageRootException)
+        {
+            return Create(GameLaunchError.DirectoryAccessDenied, exception.Message, exception);
+        }
         if (exception is HttpRequestException or TaskCanceledException)
         {
             return Create(

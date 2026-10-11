@@ -18,8 +18,15 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Launcher.Core\Launcher.Core.csproj" />
     <ProjectReference Include="..\..\src\Launcher.Infrastructure\Launcher.Infrastructure.csproj" />
+    <ProjectReference Include="..\Launcher.Guardian.TestHost\Launcher.Guardian.TestHost.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
+  <Target Name="CopyGuardianTestHost" AfterTargets="Build">
+    <ItemGroup>
+      <GuardianTestHostFiles Include="..\Launcher.Guardian.TestHost\bin\$(Configuration)\$(TargetFramework)\Launcher.Guardian.TestHost.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(GuardianTestHostFiles)" DestinationFolder="$(OutDir)" />
+  </Target>
 </Project>

@@ -17,6 +17,7 @@ public sealed class ProfileFileManager : IProfileFileManager
 
     public string GetOrCreateDirectory(string profileId, ProfileDirectoryKind directoryKind)
     {
+        _paths.EnsureRootAvailable();
         Directory.CreateDirectory(_paths.InstancesDirectory);
         EnsureNotReparsePoint(_paths.InstancesDirectory);
 

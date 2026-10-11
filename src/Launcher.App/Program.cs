@@ -1,5 +1,6 @@
 using Velopack;
 using Launcher.Infrastructure.Game;
+using Launcher.Infrastructure.Persistence;
 
 namespace Launcher.App;
 
@@ -10,7 +11,15 @@ internal static class Program
     {
         if (GameProcessGuardian.TryGetRequestPath(args, out string? guardianRequestPath))
         {
-            Environment.ExitCode = GameProcessGuardian.RunAsync(guardianRequestPath!).GetAwaiter().GetResult();
+            try
+            {
+                Environment.ExitCode = GameProcessGuardian.RunAsync(guardianRequestPath!).GetAwaiter().GetResult();
+            }
+            catch (StorageRootException)
+            {
+                // Fail closed before reading a request from an untrusted/unavailable data root.
+                Environment.ExitCode = 6;
+            }
             return;
         }
 
