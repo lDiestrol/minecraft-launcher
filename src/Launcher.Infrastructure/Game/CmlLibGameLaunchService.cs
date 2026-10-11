@@ -54,7 +54,7 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
             EnsureFreeDiskSpace(instanceDirectory);
 
             _logger.Info(
-                $"Game launch requested: profile={request.ProfileId}, Minecraft={request.MinecraftVersion}, " +
+                $"Game launch requested: mode={request.Mode}, profile={request.ProfileId}, Minecraft={request.MinecraftVersion}, " +
                 $"loader=Fabric {request.LoaderVersion}, instance={instanceDirectory}.");
 
             MinecraftPath sharedPath = new(_paths.RootDirectory);
@@ -145,18 +145,7 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
 
                 currentStage = GameLaunchStage.PreparingLaunch;
                 Report(progress, currentStage, "Подготовка команды запуска");
-                MLaunchOption launchOption = new()
-                {
-                    Session = MSession.CreateOfflineSession(request.Nickname),
-                    MaximumRamMb = request.RamMb,
-                    MinimumRamMb = Math.Min(1024, request.RamMb),
-                    JavaPath = javaPath,
-                    Path = instancePath,
-                    ServerIp = request.ServerAddress,
-                    ServerPort = request.ServerPort,
-                    GameLauncherName = "MinecraftLauncher",
-                    GameLauncherVersion = LauncherVersion.Current,
-                };
+                MLaunchOption launchOption = CreateLaunchOption(request, javaPath, instancePath);
 
                 using Process process = await launcher.BuildProcessAsync(
                     installedVersionId,
@@ -218,6 +207,32 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
         }
     }
 
+    internal static MLaunchOption CreateLaunchOption(
+        GameLaunchRequest request,
+        string javaPath,
+        MinecraftPath instancePath)
+    {
+        ValidateRequest(request);
+        MLaunchOption option = new()
+        {
+            Session = MSession.CreateOfflineSession(request.Nickname),
+            MaximumRamMb = request.RamMb,
+            MinimumRamMb = Math.Min(1024, request.RamMb),
+            JavaPath = javaPath,
+            Path = instancePath,
+            GameLauncherName = "MinecraftLauncher",
+            GameLauncherVersion = LauncherVersion.Current,
+        };
+
+        if (request.Mode == GameLaunchMode.Server)
+        {
+            option.ServerIp = request.ServerAddress;
+            option.ServerPort = request.ServerPort;
+        }
+
+        return option;
+    }
+
     private static MinecraftPath CreateInstancePath(string instanceDirectory, MinecraftPath sharedPath) =>
         new(instanceDirectory)
         {
@@ -274,7 +289,8 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
 
     private static void ValidateRequest(GameLaunchRequest request)
     {
-        if (!ProfileValueValidator.IsValidProfileId(request.ProfileId) ||
+        if (!Enum.IsDefined(request.Mode) ||
+            !ProfileValueValidator.IsValidProfileId(request.ProfileId) ||
             !ProfileValueValidator.IsValidVersion(request.MinecraftVersion) ||
             !ProfileValueValidator.IsValidVersion(request.LoaderVersion) ||
             !ProfileValueValidator.IsValidServerAddress(request.ServerAddress) ||

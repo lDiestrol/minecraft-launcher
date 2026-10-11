@@ -35,6 +35,7 @@ public sealed class LauncherOperationCoordinator
                 profile,
                 packProgress,
                 cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             GameLaunchResult gameResult = await _gameLaunchService.LaunchAsync(
                 launchRequest,
                 gameProgress,

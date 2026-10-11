@@ -418,13 +418,21 @@
                                             </StackPanel>
                                         </Grid>
 
-                                        <Button Grid.Row="2"
-                                                MinHeight="66"
-                                                automation:AutomationProperties.Name="Играть"
-                                                Command="{Binding PlayCommand}"
-                                                Content="{Binding PlayButtonText}"
-                                                FontSize="20"
-                                                Style="{StaticResource PrimaryButton}" />
+                                        <StackPanel Grid.Row="2">
+                                            <Button MinHeight="66"
+                                                    automation:AutomationProperties.Name="Играть"
+                                                    Command="{Binding PlayCommand}"
+                                                    Content="{Binding PlayButtonText}"
+                                                    FontSize="20"
+                                                    Style="{StaticResource PrimaryButton}" />
+                                            <Button Margin="0,10,0,0"
+                                                    MinHeight="44"
+                                                    automation:AutomationProperties.Name="Одиночная игра"
+                                                    Command="{Binding SingleplayerCommand}"
+                                                    Content="Одиночная игра"
+                                                    ToolTip="Открыть главное меню Minecraft с модами выбранной сборки, без подключения к серверу."
+                                                    Style="{StaticResource QuietButton}" />
+                                        </StackPanel>
                                     </Grid>
                                 </Grid>
                             </Border>
