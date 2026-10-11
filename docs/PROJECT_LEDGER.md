@@ -5,7 +5,8 @@
 > `feat/v061-gui-bootstrapper`; main/release/v0.6.0 не изменяются.
 > Реализован Draft native GUI → self-contained helper → прежний Installation Coordinator
 > → Setup161. Полные гарантии, IPC, результаты и ограничения — [releasing.md](releasing.md)
-> и [architecture.md](architecture.md). Состояние публикации — Git/GitHub feature-ветки.
+> и [architecture.md](architecture.md). Опубликован [Draft PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14)
+> из `feat/v061-gui-bootstrapper` в `feat/v0.6.1`; merge не выполнялся.
 > Новый полный прогон466/466, build0 errors/warnings; crash filter10/10, native48 checks;
 > format/release-feed tests/изолированный packaging успешны. Эти числа не означают
 > завершение Windows E2E: ordinary GUI smoke заблокирован host EnableLUA=0/elevated
@@ -536,7 +537,8 @@ diagnostic PackId; default product, Server/Singleplayer, Storage Root/Java guard
 Прямой GUI и обычный Explorer invocation отказали с elevated-token до любых
 install writes; подтверждён EnableLUA=0. Никакие Windows security settings не менялись.
 Владелец согласовал внешний ordinary-session smoke; его результаты пока отсутствуют.
-Draft готовится для независимого ревью с незакрытым E2E и fallback release gate,
+Опубликован [Draft PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14)
+в `feat/v0.6.1` для независимого ревью с незакрытым E2E и fallback release gate,
 не для автоматического merge/релиза. Author Ivan/noreply согласован только для команд
 этого этапа, без изменения Git config. Полная проверка данных на D/VHDX не заявляется.
 
