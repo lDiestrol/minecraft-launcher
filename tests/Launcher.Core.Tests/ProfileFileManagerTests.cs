@@ -75,8 +75,9 @@ public sealed class ProfileFileManagerTests
 
         ProfileFileManager manager = new(paths, new NullAppLogger());
 
-        Assert.Throws<InvalidOperationException>(() =>
-            manager.GetOrCreateDirectory("main", ProfileDirectoryKind.Game));
+        Assert.Equal(StorageRootError.UnsafePath, Assert.Throws<StorageRootException>(() =>
+            manager.GetOrCreateDirectory("main", ProfileDirectoryKind.Game)).Error);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(target));
     }
 
     private sealed class TestDirectory : IDisposable

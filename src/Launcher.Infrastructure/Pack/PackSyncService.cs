@@ -156,6 +156,12 @@ public sealed class PackSyncService : IPackSyncService
         {
             throw;
         }
+        catch (StorageRootException exception)
+        {
+            throw Failure(exception.Error == StorageRootError.UnsafePath
+                ? PackSyncError.UnsafeManagedPath : PackSyncError.DirectoryAccessDenied,
+                exception.Message, "GameData root validation failed.", exception);
+        }
         catch (TaskCanceledException exception)
         {
             throw Failure(

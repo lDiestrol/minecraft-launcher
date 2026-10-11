@@ -9,6 +9,122 @@ namespace Launcher.Core.Tests;
 
 public sealed class GameProcessGuardianTests
 {
+    [Theory]
+    [InlineData("installed", "MinecraftLauncher.exe", false)]
+    [InlineData("portable", "MinecraftLauncher.exe", false)]
+    [InlineData("development", "dotnet.exe", true)]
+    public void GuardianProcessArguments_SupportAppHostAndDevelopmentDotnetHost(string mode, string executable, bool dotnet)
+    {
+        using TestDirectory directory = new();
+        string appDirectory = Path.Combine(directory.Path, mode);
+        string entry = Path.Combine(appDirectory, "MinecraftLauncher.dll");
+        Directory.CreateDirectory(appDirectory);
+        File.WriteAllText(entry, "test assembly");
+        string request = Path.Combine(directory.Path, "GameData", ".locks", "guardian", "request.json");
+        ProcessStartInfo start = GameProcessGuardianClient.CreateGuardianStartInfo(request, executable, entry, appDirectory);
+        Assert.Equal(executable, start.FileName);
+        Assert.Equal(appDirectory, start.WorkingDirectory);
+        Assert.False(start.UseShellExecute);
+        Assert.Equal(dotnet ? new[] { entry, GameProcessGuardian.CommandLineSwitch, request }
+            : new[] { GameProcessGuardian.CommandLineSwitch, request }, start.ArgumentList);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ResolvedRoot_GuardianResolvesSameAuthorityAndKeepsStorageLeaseAfterLauncherCloses(bool legacy)
+    {
+        using TestDirectory directory = new();
+        StorageRootResolver resolver = new(Path.Combine(directory.Path, "local"), Path.Combine(directory.Path, "App"));
+        string root = legacy ? resolver.LegacyRootDirectory : Path.Combine(directory.Path, "GameData");
+        if (!legacy)
+        {
+            resolver.ConfigureNewRoot(root);
+        }
+        StorageRootSession launcher = resolver.OpenSession();
+        ProcessStartInfo startInfo = CreateGameStartInfo(launcher.Paths, pingCount: 3);
+        Task<int>? guardianTask = null;
+        GameProcessGuardianClient client = CreateClient(launcher.Paths, request =>
+        {
+            guardianTask = GameProcessGuardian.RunAsync(resolver, request);
+            return Process.GetCurrentProcess();
+        });
+        try
+        {
+            GuardedGameSession game = await client.StartAsync("main", startInfo, CancellationToken.None);
+            launcher.Dispose();
+            Assert.Equal(StorageRootError.Busy,
+                Assert.Throws<StorageRootException>(() => resolver.ConfigureNewRoot(root)).Error);
+            Assert.False(new FileProfileOperationLock(new LauncherDataPaths(root), new NullAppLogger())
+                .TryAcquire("main", out _));
+            Assert.Equal(0, await game.WaitForExitAsync());
+            Assert.Equal(0, await guardianTask!);
+            resolver.ConfigureNewRoot(root);
+        }
+        finally
+        {
+            launcher.Dispose();
+            if (guardianTask is not null)
+            {
+                await guardianTask;
+            }
+        }
+    }
+
+    [Fact]
+    public async Task GuardianRequestOutsideConfiguredRoot_IsRejectedBeforeReadingAndCannotSelectRoot()
+    {
+        using TestDirectory directory = new();
+        StorageRootResolver resolver = new(Path.Combine(directory.Path, "local"), Path.Combine(directory.Path, "App"));
+        string root = Path.Combine(directory.Path, "GameData");
+        resolver.ConfigureNewRoot(root);
+        LauncherDataPaths other = new(Path.Combine(directory.Path, "OtherData"));
+        ProcessStartInfo startInfo = CreateGameStartInfo(other);
+        string request = WriteRequest(other, Guid.NewGuid().ToString("N"), startInfo.FileName,
+            startInfo.WorkingDirectory, startInfo.Arguments);
+        await Assert.ThrowsAsync<InvalidDataException>(() => GameProcessGuardian.RunAsync(resolver, request));
+        Assert.True(File.Exists(request));
+        Assert.False(File.Exists(GameProcessGuardian.GetStatusPath(request)));
+        resolver.ConfigureNewRoot(root);
+    }
+
+    [Fact]
+    public async Task GuardianUnavailableRoot_DoesNotReadRequestOrCreateFallback()
+    {
+        using TestDirectory directory = new();
+        StorageRootResolver resolver = new(Path.Combine(directory.Path, "local"), Path.Combine(directory.Path, "App"));
+        string root = Path.Combine(directory.Path, "GameData");
+        resolver.ConfigureNewRoot(root);
+        Directory.Delete(root);
+        Assert.Equal(StorageRootError.RootUnavailable,
+            (await Assert.ThrowsAsync<StorageRootException>(() =>
+                GameProcessGuardian.RunAsync(resolver, Path.Combine(directory.Path, "untrusted.request.json")))).Error);
+        Assert.False(Directory.Exists(root));
+        Assert.False(Directory.Exists(resolver.LegacyRootDirectory));
+    }
+
+    [Fact]
+    public async Task GuardianRequestRootField_CannotOverrideTrustedResolver()
+    {
+        using TestDirectory directory = new();
+        StorageRootResolver resolver = new(Path.Combine(directory.Path, "local"), Path.Combine(directory.Path, "App"));
+        string root = Path.Combine(directory.Path, "GameData");
+        resolver.ConfigureNewRoot(root);
+        using StorageRootSession session = resolver.OpenSession();
+        ProcessStartInfo startInfo = CreateGameStartInfo(session.Paths);
+        string requestPath = WriteRequest(session.Paths, Guid.NewGuid().ToString("N"), startInfo.FileName,
+            startInfo.WorkingDirectory, startInfo.Arguments);
+        GameGuardianRequest original = JsonSerializer.Deserialize<GameGuardianRequest>(File.ReadAllText(requestPath))!;
+        await File.WriteAllTextAsync(requestPath, JsonSerializer.Serialize(original with
+        {
+            RootDirectory = Path.Combine(directory.Path, "untrusted-root"),
+        }));
+        Assert.Equal(2, await GameProcessGuardian.RunAsync(resolver, requestPath));
+        Assert.Equal("failed", JsonSerializer.Deserialize<GameGuardianStatus>(
+            await File.ReadAllTextAsync(GameProcessGuardian.GetStatusPath(requestPath)))!.State);
+        Assert.False(Directory.Exists(Path.Combine(directory.Path, "untrusted-root")));
+    }
+
     [Fact]
     public async Task StartAsync_CancelledBeforeGuardian_DoesNotInvokeStarter()
     {

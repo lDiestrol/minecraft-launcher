@@ -19,6 +19,43 @@ public sealed class PackSyncServiceTests
     private static readonly byte[] FileB = Encoding.UTF8.GetBytes("official-b");
 
     [Fact]
+    public async Task ConfiguredRoot_SyncAndRepairReuseFilesWithStagingOnTargetVolumeAndPreserveWorlds()
+    {
+        using TestDirectory directory = new();
+        StorageRootResolver resolver = new(Path.Combine(directory.Path, "local"), Path.Combine(directory.Path, "App"));
+        string root = Path.Combine(directory.Path, "GameData");
+        resolver.ConfigureNewRoot(root);
+        using StorageRootSession session = resolver.OpenSession();
+        string instance = session.Paths.GetInstanceDirectory("main");
+        string world = Path.Combine(instance, "saves", "world", "level.dat");
+        Directory.CreateDirectory(Path.GetDirectoryName(world)!);
+        await IOFile.WriteAllTextAsync(world, "user-world");
+        TestHandler handler = HandlerForManifest(Manifest(File("mods/a.jar", FileA)));
+        using HttpClient http = new(handler);
+        PackSyncService service = new(http, session.Paths, new NullAppLogger());
+        bool sawStaging = false;
+        ImmediateProgress progress = new(_ =>
+        {
+            string staging = Path.Combine(instance, ".launcher", "staging");
+            if (Directory.Exists(staging))
+            {
+                sawStaging = true;
+                Assert.Equal(Path.GetPathRoot(root), Path.GetPathRoot(staging));
+                Assert.StartsWith(root, staging, StringComparison.OrdinalIgnoreCase);
+            }
+        });
+
+        Assert.Equal(1, (await service.SyncAsync(Profile(), progress, CancellationToken.None)).DownloadedFiles);
+        Assert.Equal(0, (await service.SyncAsync(Profile(), progress, CancellationToken.None)).DownloadedFiles);
+        Assert.True(sawStaging);
+        Assert.Equal(FileA, await IOFile.ReadAllBytesAsync(Path.Combine(instance, "mods", "a.jar")));
+        Assert.Equal("user-world", await IOFile.ReadAllTextAsync(world));
+        Assert.True(IOFile.Exists(Path.Combine(instance, ".launcher", "managed-state.json")));
+        Assert.Empty(Directory.EnumerateDirectories(Path.Combine(instance, ".launcher", "staging")));
+        Assert.False(Directory.Exists(resolver.LegacyRootDirectory));
+    }
+
+    [Fact]
     public async Task SyncAsync_MapsManifestMetadataTimeoutToFriendlyError()
     {
         using TestDirectory directory = new();

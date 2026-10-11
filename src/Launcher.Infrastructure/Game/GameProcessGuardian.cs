@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Text.Json;
 using Launcher.Core.Services;
 using Launcher.Core.Validation;
@@ -49,9 +50,14 @@ public static class GameProcessGuardian
 
     public static async Task<int> RunAsync(string requestPath)
     {
-        LauncherDataPaths paths = new();
-        FileAppLogger logger = new(paths);
-        return await RunAsync(paths, requestPath, logger);
+        return await RunAsync(new StorageRootResolver(), requestPath);
+    }
+
+    internal static async Task<int> RunAsync(StorageRootResolver resolver, string requestPath)
+    {
+        using StorageRootSession session = resolver.OpenSession();
+        FileAppLogger logger = new(session.Paths);
+        return await RunAsync(session.Paths, requestPath, logger);
     }
 
     internal static async Task<int> RunAsync(
@@ -60,7 +66,9 @@ public static class GameProcessGuardian
         IAppLogger logger,
         Func<Task>? beforeProcessStart = null,
         Func<Task>? afterCancellationDecision = null,
-        Func<Process, Task>? afterProcessStart = null)
+        Func<Process, Task>? afterProcessStart = null,
+        Func<Task>? afterIntent = null,
+        Func<Task>? afterState = null)
     {
         string fullRequestPath = ValidateRequestPath(paths, requestPath);
         string statusPath = GetStatusPath(fullRequestPath);
@@ -100,34 +108,12 @@ public static class GameProcessGuardian
         }
 
         using (ownership)
-        using (Process process = new())
+        using (AtomicJobProcess process = new())
         {
             bool started = false;
+            WindowsGameJob? job = null;
             try
             {
-                process.StartInfo = CreateStartInfo(request);
-                if (request.RedirectStandardOutput)
-                {
-                    process.OutputDataReceived += (_, e) =>
-                    {
-                        if (e.Data is not null)
-                        {
-                            logger.Info($"[Minecraft] {e.Data}");
-                        }
-                    };
-                }
-
-                if (request.RedirectStandardError)
-                {
-                    process.ErrorDataReceived += (_, e) =>
-                    {
-                        if (e.Data is not null)
-                        {
-                            logger.Error($"[Minecraft] {e.Data}");
-                        }
-                    };
-                }
-
                 if (beforeProcessStart is not null)
                 {
                     await beforeProcessStart();
@@ -150,33 +136,29 @@ public static class GameProcessGuardian
                     await afterCancellationDecision();
                 }
 
-                if (!process.Start())
+                job = new WindowsGameJob(request.OwnershipToken);
+                activity.WriteIntent(request.ProfileId, request.OwnershipToken, job.Name);
+                if (afterIntent is not null)
                 {
-                    throw new InvalidOperationException("Minecraft process did not start.");
+                    await afterIntent();
                 }
 
+                process.Start(CreateStartInfo(request), job, logger);
                 started = true;
                 if (afterProcessStart is not null)
                 {
-                    await afterProcessStart(process);
+                    using Process observed = Process.GetProcessById(process.Id);
+                    await afterProcessStart(observed);
                 }
 
-                DateTime startTimeUtc = process.StartTime.ToUniversalTime();
-                activity.WriteState(
-                    request.ProfileId,
-                    process.Id,
-                    startTimeUtc,
-                    request.OwnershipToken);
+                DateTime startTimeUtc = process.StartTimeUtc;
+                activity.WriteIntent(request.ProfileId, request.OwnershipToken, job.Name, process.Id, startTimeUtc.Ticks);
+                if (afterState is not null)
+                {
+                    await afterState();
+                }
+
                 TryDelete(cancellationPath);
-                if (request.RedirectStandardOutput)
-                {
-                    process.BeginOutputReadLine();
-                }
-
-                if (request.RedirectStandardError)
-                {
-                    process.BeginErrorReadLine();
-                }
 
                 TryWriteStatus(statusPath, new GameGuardianStatus(
                     CurrentSchemaVersion,
@@ -190,6 +172,7 @@ public static class GameProcessGuardian
 
                 await process.WaitForExitAsync();
                 int exitCode = process.ExitCode;
+                await WaitForEmptyJobAsync(job);
                 activity.DeleteState(request.ProfileId, request.OwnershipToken);
                 TryWriteStatus(statusPath, new GameGuardianStatus(
                     CurrentSchemaVersion,
@@ -205,7 +188,7 @@ public static class GameProcessGuardian
             catch (Exception exception)
             {
                 logger.Error("Game guardian failed.", exception);
-                if (started && !HasExited(process))
+                if (started && !process.HasExited)
                 {
                     logger.Info("Guardian will keep the profile lock until Minecraft exits after a guardian error.");
                     try
@@ -218,17 +201,41 @@ public static class GameProcessGuardian
                     }
                 }
 
-                activity.DeleteState(request.ProfileId, request.OwnershipToken);
+                // Keep an uncertain intent on any query/wait failure, including failure after CreateProcess.
+                try
+                {
+                    if (job is not null)
+                    {
+                        await WaitForEmptyJobAsync(job);
+                        activity.DeleteState(request.ProfileId, request.OwnershipToken);
+                    }
+                }
+                catch (Exception recoveryException)
+                {
+                    logger.Error("Guardian retained its launch intent: game job exit could not be proven.", recoveryException);
+                }
                 TryWriteStatus(statusPath, new GameGuardianStatus(
                     CurrentSchemaVersion,
                     request.OwnershipToken,
                     "failed",
                     started ? process.Id : null,
-                    ExitCode: started && HasExited(process) ? process.ExitCode : null,
+                    ExitCode: started && process.HasExited ? process.ExitCode : null,
                     Error: exception.Message), logger);
                 TryDelete(cancellationPath);
                 return 4;
             }
+            finally
+            {
+                job?.Dispose();
+            }
+        }
+    }
+
+    private static async Task WaitForEmptyJobAsync(WindowsGameJob job)
+    {
+        while (job.ActiveProcesses != 0)
+        {
+            await Task.Delay(100);
         }
     }
 
@@ -297,6 +304,7 @@ public static class GameProcessGuardian
         }
 
         string javaPath = Path.GetFullPath(request.FileName);
+        StoragePathPolicy.EnsureNoReparsePoints(javaPath);
         if (!paths.IsManagedRuntimePath(javaPath) || !File.Exists(javaPath))
         {
             throw new InvalidDataException("Guardian executable is outside the managed Java runtime.");
@@ -575,17 +583,35 @@ internal sealed class GameProcessGuardianClient
                 "The current Launcher executable path is unavailable.");
         }
 
+        ProcessStartInfo guardianStartInfo = CreateGuardianStartInfo(requestPath, launcherPath,
+            Assembly.GetEntryAssembly()?.Location, AppContext.BaseDirectory);
+        return Process.Start(guardianStartInfo) ?? throw new InvalidOperationException(
+            "The game guardian process did not start.");
+    }
+
+    internal static ProcessStartInfo CreateGuardianStartInfo(
+        string requestPath, string launcherPath, string? entryAssemblyPath, string applicationDirectory)
+    {
         ProcessStartInfo guardianStartInfo = new()
         {
             FileName = launcherPath,
-            WorkingDirectory = AppContext.BaseDirectory,
+            WorkingDirectory = applicationDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        if (Path.GetFileNameWithoutExtension(launcherPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(entryAssemblyPath) || !File.Exists(entryAssemblyPath))
+            {
+                throw new InvalidOperationException("The development Launcher entry assembly is unavailable.");
+            }
+
+            guardianStartInfo.ArgumentList.Add(Path.GetFullPath(entryAssemblyPath));
+        }
+
         guardianStartInfo.ArgumentList.Add(GameProcessGuardian.CommandLineSwitch);
         guardianStartInfo.ArgumentList.Add(requestPath);
-        return Process.Start(guardianStartInfo) ?? throw new InvalidOperationException(
-            "The game guardian process did not start.");
+        return guardianStartInfo;
     }
 
     private GameGuardianRequest CreateRequest(

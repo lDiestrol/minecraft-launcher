@@ -218,7 +218,7 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
         }
     }
 
-    private static MinecraftPath CreateInstancePath(string instanceDirectory, MinecraftPath sharedPath) =>
+    internal static MinecraftPath CreateInstancePath(string instanceDirectory, MinecraftPath sharedPath) =>
         new(instanceDirectory)
         {
             Assets = sharedPath.Assets,
@@ -230,7 +230,11 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
 
     private string PrepareDirectories(string profileId)
     {
-        Directory.CreateDirectory(_paths.RootDirectory);
+        _paths.EnsureRootAvailable();
+        foreach (string sharedDirectory in new[] { "assets", "libraries", "versions", "runtime" })
+        {
+            StoragePathPolicy.EnsureNoReparsePoints(Path.Combine(_paths.RootDirectory, sharedDirectory));
+        }
         Directory.CreateDirectory(_paths.InstancesDirectory);
         string instanceDirectory = _paths.GetInstanceDirectory(profileId);
         Directory.CreateDirectory(instanceDirectory);
@@ -268,6 +272,8 @@ public sealed class CmlLibGameLaunchService : IGameLaunchService
                 $"CmlLib resolved an absent or unmanaged Java executable for version '{versionId}': " +
                 $"'{javaPath ?? "<null>"}'.");
         }
+
+        StoragePathPolicy.EnsureNoReparsePoints(javaPath);
 
         return Path.GetFullPath(javaPath);
     }

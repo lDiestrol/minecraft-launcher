@@ -7,7 +7,7 @@ internal static class ProfileLockFiles
 {
     public static string GetLocksDirectory(LauncherDataPaths paths)
     {
-        Directory.CreateDirectory(paths.RootDirectory);
+        paths.EnsureRootAvailable();
         EnsureNotReparsePoint(paths.RootDirectory);
 
         string locksDirectory = Path.Combine(paths.RootDirectory, ".locks");
