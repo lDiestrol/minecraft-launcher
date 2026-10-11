@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Launcher.Infrastructure.Logging;
+using Launcher.Infrastructure.Installation;
 
 namespace Launcher.Infrastructure.Persistence;
 
@@ -52,6 +53,7 @@ public sealed class StorageRootResolver
         try
         {
             lease = AcquireLease(exclusive: false);
+            InstallationIntentStore.EnsureNoPending(ControlDirectory);
             string? configuredRoot = ReadConfiguredRoot();
             string root = configuredRoot ?? LegacyRootDirectory;
             ValidateRoot(root);
@@ -66,7 +68,7 @@ public sealed class StorageRootResolver
             lease = null;
             return session;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or ArgumentException or InvalidDataException)
         {
             throw MapFailure(exception);
         }
@@ -82,44 +84,87 @@ public sealed class StorageRootResolver
         try
         {
             using FileStream lease = AcquireLease(exclusive: true);
-            string root = StoragePathPolicy.NormalizeDirectory(gameDataRoot);
-            ValidateRoot(root);
-            string? configuredRoot = ReadConfiguredRoot();
-            EnsureNoActiveGames(configuredRoot ?? LegacyRootDirectory);
-            if (configuredRoot is not null)
-            {
-                if (!root.Equals(configuredRoot, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw ExistingData();
-                }
-
-                EnsureAvailable(root);
-                return;
-            }
-
-            StoragePathPolicy.EnsureNoReparsePoints(LegacyRootDirectory);
-            if (!root.Equals(LegacyRootDirectory, StringComparison.OrdinalIgnoreCase) &&
-                (File.Exists(LegacyRootDirectory) || (Directory.Exists(LegacyRootDirectory) &&
-                 Directory.EnumerateFileSystemEntries(LegacyRootDirectory).Any())))
-            {
-                throw ExistingData();
-            }
-
-            // Do not adopt arbitrary directories or replace data belonging to another installation.
-            if (Directory.Exists(root) && Directory.EnumerateFileSystemEntries(root).Any() &&
-                !root.Equals(LegacyRootDirectory, StringComparison.OrdinalIgnoreCase))
-            {
-                throw ExistingData();
-            }
-
-            Directory.CreateDirectory(root);
-            EnsureAvailable(root);
-            WriteConfiguration(root);
+            InstallationIntentStore.EnsureNoPending(ControlDirectory);
+            ConfigureNewRootUnderLease(gameDataRoot);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
         {
             throw MapFailure(exception);
         }
+    }
+
+    internal FileStream AcquireInstallationLease()
+    {
+        FileStream lease = AcquireLease(exclusive: true);
+        try
+        {
+            EnsureNoActiveGames(ReadConfiguredRoot() ?? LegacyRootDirectory);
+            return lease;
+        }
+        catch
+        {
+            lease.Dispose();
+            throw;
+        }
+    }
+
+    internal FileStream AcquireStartupLease()
+    {
+        FileStream lease = AcquireLease(exclusive: false);
+        try
+        {
+            InstallationIntentStore.EnsureNoPending(ControlDirectory);
+            return lease;
+        }
+        catch
+        {
+            lease.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>Read-only discovery: unlike OpenSession, does not create the legacy root.</summary>
+    public string? InspectConfiguredRoot()
+    {
+        StoragePathPolicy.EnsureNoReparsePoints(ControlDirectory);
+        return ReadConfiguredRoot();
+    }
+
+    internal void ConfigureNewRootUnderLease(string gameDataRoot)
+    {
+        string root = StoragePathPolicy.NormalizeDirectory(gameDataRoot);
+        ValidateRoot(root);
+        string? configuredRoot = ReadConfiguredRoot();
+        EnsureNoActiveGames(configuredRoot ?? LegacyRootDirectory);
+        if (configuredRoot is not null)
+        {
+            if (!root.Equals(configuredRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                throw ExistingData();
+            }
+
+            EnsureAvailable(root);
+            return;
+        }
+
+        StoragePathPolicy.EnsureNoReparsePoints(LegacyRootDirectory);
+        if (!root.Equals(LegacyRootDirectory, StringComparison.OrdinalIgnoreCase) &&
+            (File.Exists(LegacyRootDirectory) || (Directory.Exists(LegacyRootDirectory) &&
+             Directory.EnumerateFileSystemEntries(LegacyRootDirectory).Any())))
+        {
+            throw ExistingData();
+        }
+
+        // Do not adopt arbitrary directories or replace data belonging to another installation.
+        if (Directory.Exists(root) && Directory.EnumerateFileSystemEntries(root).Any() &&
+            !root.Equals(LegacyRootDirectory, StringComparison.OrdinalIgnoreCase))
+        {
+            throw ExistingData();
+        }
+
+        Directory.CreateDirectory(root);
+        EnsureAvailable(root);
+        WriteConfiguration(root);
     }
 
     private FileStream AcquireLease(bool exclusive)
@@ -163,6 +208,10 @@ public sealed class StorageRootResolver
             stream = new FileStream(ConfigurationFile, FileMode.Open, FileAccess.Read, FileShare.Read);
         }
         catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
         {
             return null;
         }
@@ -253,7 +302,7 @@ public sealed class StorageRootResolver
             "Launcher или Minecraft использует игровые данные. Закройте их перед выбором каталога.", exception),
         UnauthorizedAccessException => new(StorageRootError.AccessDenied,
             "Нет доступа к каталогу игровых данных или служебной конфигурации Launcher. Проверьте права доступа.", exception),
-        JsonException or ArgumentException => InvalidConfiguration(exception),
+        JsonException or ArgumentException or InvalidDataException => InvalidConfiguration(exception),
         _ => Unavailable(exception),
     };
 

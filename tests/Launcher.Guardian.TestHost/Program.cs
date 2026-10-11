@@ -3,6 +3,11 @@ using Launcher.Infrastructure.Logging;
 using Launcher.Infrastructure.Persistence;
 
 // Isolated test process only; never part of the Launcher CLI or release packaging.
+if (args[0] is "install-owner" or "install-writer")
+{
+    return await InstallationCrashHost.RunAsync(args);
+}
+
 if (args[0] == "verify-java")
 {
     return await RealJavaRecoveryChecks.RunAsync(args[1], args[2], args[3], args[4]);
