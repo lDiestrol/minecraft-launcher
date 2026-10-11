@@ -22,6 +22,6 @@
     <None Include="Assets\Launcher.svg" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Velopack" Version="1.2.158" />
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 </Project>

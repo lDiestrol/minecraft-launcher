@@ -16,8 +16,15 @@
 > NTFS D:, оба режима, сохранение мира после JVM restart, Repair без изменения level.dat,
 > защита занятого профиля и освобождение после выхода; см. раздел 12.
 > `main` сохраняет v0.6.0, SHA `bd98ecd721298981508d54466d11089c1647ab4f`.
-> Разрешены commits/обычный push ветки PR #11 и merge обоих PR только после проверок.
-> Main/release/tag/Release не менять. Installer не создаётся, test-ветка/VHDX сохраняются.
+> Исторический этап 11.10.2026: GUI Installer Architecture & Feasibility, без полноценной реализации.
+> PR #11 merged; актуальный feat/v0.6.1 HEAD `6f5e11eced389416bb243804539b19f549cea5c5`.
+> Следующий согласованный этап 11.10.2026: SDK и local vpk обновлены до 1.2.161 в
+> [chore/v061-velopack-12161](https://github.com/lDiestrol/minecraft-launcher/tree/chore/v061-velopack-12161)
+> от этой основы. Новый полный прогон 372/372, crash/recovery 23/23, build/format чистые.
+> Владелец разрешил один commit, обычный push и Draft PR в feat/v0.6.1;
+> фактическое состояние публикации — Git/GitHub этой ветки, не собственный SHA в Ledger.
+> Merge/tag/Release запрещены; main/release, test-ветка и VHDX сохраняются.
+> Installation Coordinator и GUI не реализуются в этом этапе.
 
 ## 1. Назначение и источник состояния
 
@@ -60,7 +67,7 @@ Minecraft Launcher — публичный Windows x64 клиент на .NET 10 
 | Стабильный release | [v0.6.0](https://github.com/lDiestrol/minecraft-launcher/releases/tag/v0.6.0), GitHub API: `draft=false`, `prerelease=false`, опубликован 09.10.2026 |
 | Release tag/target | [1ae3ae74b1b70d92031fe8706f80f85e506efd56](https://github.com/lDiestrol/minecraft-launcher/commit/1ae3ae74b1b70d92031fe8706f80f85e506efd56) |
 | Версия исходников | `0.6.0` в [Directory.Build.props](../Directory.Build.props) |
-| Runtime/packaging | Self-contained `win-x64`, Velopack `1.2.158`, PackId `lDiestrol.MinecraftLauncher`, stable channel |
+| Runtime/packaging стабильной v0.6.0 | Self-contained `win-x64`, Velopack `1.2.158`, PackId `lDiestrol.MinecraftLauncher`, stable channel |
 | Подпись | Authenticode отсутствует; пакеты unsigned |
 
 Tag релиза и verified main различаются: после релизного commit в main добавлена
@@ -191,8 +198,8 @@ ServerIp не попадает в arguments. Tests проверяют факти
 ручным smoke 10.10.2026: «Одиночная игра» открывает обычное главное меню Minecraft,
 «Играть» автоматически подключается к серверу. Это пользовательское свидетельство,
 не новый агентский прогон и не CI; создание/сохранение мира, новый installer и installed
-update этим не проверены. Реализация опубликована в Draft PR #10; merge и дальнейшая
-программная разработка требуют отдельного разрешения.
+update этим не проверены. Исторически реализация опубликована в Draft PR #10;
+последующий согласованный merge PR #10/#11 и smoke описаны в разделе 12.
 
 ### 5.2. v0.6.1 — Installer & Storage Architecture
 
@@ -291,7 +298,8 @@ release feed/packaging и installed update новой версии. Версии
 унаследованные per-user права Control, без all-users installer support. Не обещается
 защита от произвольного same-user tampering/TOCTOU или полный pack rollback.
 Пользовательский Minecraft smoke legacy C:/custom NTFS D: подтверждён (раздел 12).
-Custom-directory install/update E2E ещё не выполнялись.
+Custom-directory install/update E2E настоящего Launcher ещё не выполнялись;
+диагностические host проверки описаны отдельно в разделе 12.
 Следующий PR должен выбрать GUI-путь и связать его с initial ConfigureNewRoot до
 первого запуска под правильным пользователем. Pinned Velopack capabilities/deprecation
 и предложение отдельного upgrade approval: [releasing.md](releasing.md).
@@ -455,7 +463,7 @@ WindowChrome, IsEnabled, Focusable и действия кнопок сохран
 
 ## 10. Нерешённые вопросы
 
-Перед v0.6.1: завершение согласованной GitHub-интеграции PR #10/#11;
+Перед v0.6.1: PR #10/#11 уже merged; остаются независимый review SDK upgrade,
 совместимый GUI installer и реализация согласованного root/legacy contract в нём
 (раздел 5.2). Владелец подтвердил оба режима, сохранение мира/restart и Repair в legacy/custom root.
 Реальные clean-install на выбранном диске,
@@ -515,6 +523,7 @@ code signing и срок; частые реальные диагностичес
 | 11.10.2026 | После предыдущего stop владелец явно согласовал recovery при отсутствующем Job и завершённом guardian для подтверждённого witness-контракта основной JVM. Проверены Java 17/21, интегрированы intent v3/witness v1 и атомарный запуск со stdio + QUERY witness. Реальные production-guardian crash/recovery checks прошли; legacy/unknown intents и AccessDenied fail-closed. Сохранены SR-002/SR-003, исправлен точный exception contract ProfileFileManagerTests без ослабления containment/reparse проверок; новые результаты 340/340 ниже. Никакой публикации или интеграции PR #10 |
 | 11.10.2026 | После публикации PR #11 владелец согласовал локальную совместную интеграцию PR #10 → PR #11 в отдельной test-ветке от 52ee0d8. Три конфликта разрешены по смыслу: оба режима + trusted root/shared mapping; история Storage Root review и roadmap сохранены. На том этапе оригинальные PR не менялись, GitHub merge не выполнялся |
 | 11.10.2026 | Владелец подтвердил реальный Windows11 smoke на legacy C: и custom NTFS D: через ConfigureNewRoot, оба режима, Fabric/Java/mods на D:, сохранение мира StorageRoot-Test после полного JVM restart, Repair с неизменным SHA-256 level.dat, конфликтующие Launcher и recovery. Затем разрешил commit/push/merge PR #10/#11; PR #10 объединён обычным merge cc30be0. PR #11 адаптируется через сохранённую эталонную test-ветку с проверкой идентичности production-кода и новым regression; installer не начинается |
+| 11.10.2026 | После merge PR #10/#11 и отдельного architecture study владелец разрешил SDK/vpk upgrade 1.2.158 → 1.2.161. Создана chore/v061-velopack-12161 от origin/feat/v0.6.1 6f5e11e; сохранены прежние локальные Ledger/releasing исследования. Обновлены только три Velopack PackageReference и local vpk pin, текущая документация. Новые restore/build/372 tests/format, crash/recovery23, release-feed script и packaging успешны; isolated mixed-SDK installed update и fresh Setup161 подтверждены. Один commit/push/Draft PR разрешены, merge/release и installer implementation — нет |
 
 SHA собственных документационных коммитов в Ledger не записываются;
 их следует проверять по Git и истории PR.
@@ -530,9 +539,83 @@ Ledger; проверенный код не менялся, полный regressi
 SHA не дублируется в Ledger. Minecraft/Fabric smoke, installer/update E2E и совместная
 проверка после PR #10 остаются release gates, а не выполненными проверками.
 
-PR #11 опубликован как Draft в feat/v0.6.1; его HEAD подтверждён GitHub при начале интеграции.
+Исторически PR #11 опубликован как Draft в feat/v0.6.1; его HEAD подтверждён GitHub
+при начале интеграции. Последующий merge проверен перед SDK upgrade.
 
 ## 12. Последние проверки
+
+### Velopack SDK/vpk upgrade 1.2.161, 11.10.2026
+
+Актуальная основа после fetch — origin/feat/v0.6.1 `6f5e11e`; PR #10/#11 merged.
+Начальное дерево: только два известных документа исследования, сохранены без потери.
+Рабочая ветка — chore/v061-velopack-12161, публикация по согласованию в Draft PR
+с base feat/v0.6.1; статус/HEAD смотреть по GitHub ветке выше и Git.
+
+| Новый прогон | Фактический результат |
+| --- | --- |
+| Pins / tool restore | App, Infrastructure, test-only UpdateE2EHarness и local vpk — 1.2.161. dotnet tool restore успешен; dotnet vpk -h сообщает CLI 1.2.161. CLI не поддерживает --version, версия проверена через help |
+| Restore / build | Solution restore успешен; build --no-restore: 0 errors, 0 warnings. Отдельный UpdateE2EHarness restore/build также 0 errors/warnings |
+| Полный xUnit | Core 353 + App 19 = **372/372**, 0 failed/skipped. Реальные Minecraft/Fabric не запускались в этом этапе |
+| Crash/recovery повтор | **23/23**, 0 failed/skipped, отдельный новый прогон StorageRootCrashTests/StorageRootRecoveryTests |
+| Format | Solution format --verify-no-changes --no-restore: exit0 |
+| Release tooling | ReleaseFeedScriptTests.ps1 passed; неизменённый build-release.ps1 с test-only Version 0.6.1-velopack-test.1 / dev успешно создал Setup/full/portable/index/assets/SHA256SUMS. Output paths отсутствовали до запуска, старые artifacts не удалялись; production version в Directory.Build.props остаётся 0.6.0 |
+| Mixed SDK/native installed update | Новый ignored artifacts/velopack-upgrade-12161-20261011, отдельный PackId MinecraftLauncher.VelopackUpgrade.20261011, dev, без shortcuts. Host0.0.1 SDK/vpk158 → host0.0.2 SDK/vpk161: check/download/apply/restart exit0, identity/channel/custom install root с пробелами сохранены. Full/delta/portable/Setup/index созданы; download evidence указывает готовый full package |
+| Native Update.exe | До update FileVersion/ProductVersion1.2.158, SHA256 4b2bfeed811543e2d37be8743f2b1ea46dd947bc09c8ada9eb0383c0d7886cdb. После apply/restart и startup hook — 1.2.161, SHA256 acefb4a2cb46cc77ed3c2364db17f8bd2a25e2197cfeae56cd85e88a7ac21ac5; совпадает с vendor update_x64.exe161. Это измерение одной цепочки, не гарантия одной лишь смены NuGet pin |
+| Fresh Setup161 / uninstall | Настоящий Setup161 --silent --installto custom C: path: exit0, hook successful, обычный launch отсутствует; installed SDK/native161 подтверждены. Оба диагностических uninstall успешны, current и отдельная HKCU registration удалены |
+| Data/cache boundaries | World sentinel и sandbox locator SHA256 не менялись после update, uninstall и reinstall. PackagesDir=App/packages, AppTempDir=App/packages/VelopackTemp; native temp/log OS paths не равны гарантии всех writes на выбранном томе. Исходники/пакеты/логи/JSON оставлены ignored |
+| Scope | Семь tracked файлов: четыре pins и Ledger/architecture/releasing. Нет изменений .cs/UI/StorageRootResolver/режимов/RAM/protocol/версии/остальных зависимостей; main/release/production/VHDX не меняются |
+| Markdown / diff | 17 Markdown-документов, 82 внутренние файловые ссылки и fences проверены, git diff --check чистый. В итоговый diff не включены untracked binaries/логи/PoC или секреты |
+
+Прототип сначала получил CA1416 из-за net10.0 target в Windows-only helper; исправлен
+только ignored host target на net10.0-windows. Его повторные сборки чистые; packaging
+предупреждает только об отсутствии подписи, не о placement VelopackApp.Run.
+Сохранены предыдущие architecture PoC и его исторические результаты ниже.
+
+Совместимость настоящего installed Launcher v0.6.0 → v0.6.1 **не подтверждена этим PoC**:
+изолированная Windows account/VM не предоставлена, текущий пользовательский PackId/root
+не использован. Перед релизом обязателен отдельный stable-to-candidate E2E с обоими
+режимами, settings/world hashes, guardian lifecycle и проверкой native updater после restart.
+Win10, D:/low-space, ACL/fallback faults, UAC/cross-user и полный native write trace
+в этом этапе не выполнялись. Upgrade готов к независимому review; следующий Coordinator
+PR требует отдельного согласования и сохраняет preflight/installation lease gates.
+
+### Исторический GUI Installer Architecture & Feasibility, 11.10.2026
+
+Fetch/GitHub подтверждают merged PR #10/#11; рабочая и origin/feat/v0.6.1 на
+`6f5e11eced389416bb243804539b19f549cea5c5`, origin/main bd98ecd. Исходное дерево чистое.
+Прочитаны AGENTS, Ledger, architecture/releasing, build-release и текущий bootstrap/resolver.
+NuGet/tool cache и бинарная справка подтверждают SDK/vpk 1.2.158; зависимости не обновлялись.
+Исследованы pinned Setup/MSI/locator/update/uninstall и официальный compare с 1.2.161.
+
+Предложение: собственный per-user русский GUI-bootstrapper над silent Setup --installto,
+не stock MSI. ConfigureNewRoot до native Setup под исходным не-elevated пользователем;
+actual App target передаётся в существующий resolver. Legacy/configured GameData остаётся
+на месте; same-volume App/GameData относится к clean install, не автоматической миграции.
+Нужны coordination на весь install lifetime, проверка не-пустого App перед silent overwrite,
+fail-closed cache/update paths (SDK содержит unwritable-App fallback на LocalAppData),
+и исключение large self-extraction в C: до выбора тома. Предпочтителен небольшой native GUI
+с .NET storage helper в staging выбранного тома; этот packaging ещё не прототипирован.
+Подробная схема/риски/PR и Windows acceptance matrix: [releasing.md](releasing.md).
+
+Новый isolated PoC (ignored artifacts/installer-feasibility-20261011) использует отдельный
+diagnostic PackId, self-contained host и actual compiled resolver, не текущий Launcher.
+Initial configure/reopen/idempotence/legacy refusal успешны. Native Setup silent успешно
+установил host в custom C: path с пробелами вне LocalAppData и не выполнил обычный запуск.
+Installed local-feed 0.0.1 → 0.0.2 check/download/apply/restart подтвердил сохранение
+RootAppDir, App/packages и App/packages/VelopackTemp. Последующий штатный uninstall удалил
+только diagnostic App/registration; SHA-256 sandbox locator и world sentinel неизменны.
+Исходники/пакеты/JSON/logs оставлены для повторения. Pack warnings: unsigned и async
+state-machine placement VelopackApp.Run; production entry point/подпись не менялись.
+Single-file helper дополнительно запущен с per-process temp/extract-base внутри lab,
+exit0; значение environment подтверждено, полный native write/extraction trace не снят.
+
+Не выполнялись GUI/MSI, low-space/D:/UAC/cross-user или stable v0.6.0 installed update.
+Launcher restore/build/test/format не повторялись: прежние 372/372 — исторические.
+VHDX/D: read-only inventory; никаких mount/unmount/format/игровых записей. Файл VHDX
+на C: не доказывает независимость D: от нехватки backing disk space.
+На том этапе изменены только Ledger/releasing и ignored PoC, без commit/push/merge/release;
+архитектура и SDK/vpk upgrade требовали отдельного согласования. Последующее разрешение
+и фактические результаты SDK/vpk upgrade 1.2.161 описаны выше.
 
 ### GitHub-интеграция после подтверждённого smoke, 11.10.2026
 
@@ -990,12 +1073,12 @@ Guardian crash по-прежнему сообщает Launcher ошибку на
 
 ## 13. Следующие действия и миграция документов
 
-1. Совместный код проверен новым full/crash regression и подтверждён владельцем
-   Minecraft smoke legacy/custom root. PR #10 merged; PR #11 адаптирован/проверен,
-   его конечный merge-статус и итоговый feat/v0.6.1 HEAD смотреть в Git/GitHub.
+1. PR #10/#11 merged; совместный код ранее подтверждён владельцем Minecraft smoke
+   legacy/custom root. Отдельный SDK/vpk upgrade161 проверен новым full/crash regression
+   и диагностическим installed update; независимый review/merge — отдельное решение.
 2. Test-ветку a9f8642 и пользовательский VHDX сохранить. Main/release не изменять;
-   tags/Release/force push запрещены. После согласованной GitHub-интеграции остановиться.
-3. Installer — следующая **отдельно согласуемая** задача: GUI/SDK approval, per-user locator, clean D:/почти
+   tags/Release/force push запрещены. После публикации upgrade Draft PR остановиться.
+3. Installer — следующая **отдельно согласуемая** задача: Coordinator/GUI approval, per-user locator, clean D:/почти
    полный C:, packaging и installed v0.6.0 update с сохранностью worlds/settings.
 4. UI/UX/RAM/ping — v0.6.2; Storage Manager — v0.6.3; несколько источников — v0.7.0.
    Старые status/roadmap/handoff не удаляются, Pack Manager независим.
