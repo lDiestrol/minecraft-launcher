@@ -6,6 +6,7 @@ using CmlLib.Core.Version;
 using Launcher.Core.Models;
 using Launcher.Core.Services;
 using Launcher.Infrastructure.Game;
+using Launcher.Infrastructure.Persistence;
 
 namespace Launcher.Core.Tests;
 
@@ -43,12 +44,32 @@ public sealed class CmlLibLaunchModeTests
     }
 
     [Theory]
-    [InlineData(GameLaunchMode.Server, false)]
-    [InlineData(GameLaunchMode.Server, true)]
-    [InlineData(GameLaunchMode.Singleplayer, false)]
-    [InlineData(GameLaunchMode.Singleplayer, true)]
-    public void ProcessArguments_RespectModeForLegacyAndQuickPlayVersions(GameLaunchMode mode, bool quickPlay)
+    [InlineData(GameLaunchMode.Server, false, false)]
+    [InlineData(GameLaunchMode.Server, true, false)]
+    [InlineData(GameLaunchMode.Singleplayer, false, false)]
+    [InlineData(GameLaunchMode.Singleplayer, true, false)]
+    [InlineData(GameLaunchMode.Server, false, true)]
+    [InlineData(GameLaunchMode.Server, true, true)]
+    [InlineData(GameLaunchMode.Singleplayer, false, true)]
+    [InlineData(GameLaunchMode.Singleplayer, true, true)]
+    public void ProcessArguments_RespectModeForLegacyAndQuickPlayVersions(GameLaunchMode mode, bool quickPlay, bool customRoot)
     {
+        using TemporaryStorage directory = new();
+        StorageRootResolver resolver = new(Path.Combine(directory.Path, "local"), Path.Combine(directory.Path, "App"));
+        if (customRoot)
+        {
+            resolver.ConfigureNewRoot(Path.Combine(directory.Path, "GameData"));
+        }
+        using StorageRootSession session = resolver.OpenSession();
+        MinecraftPath shared = new(session.Paths.RootDirectory);
+        MinecraftPath path = CmlLibGameLaunchService.CreateInstancePath(session.Paths.GetInstanceDirectory("main"), shared);
+        Assert.Equal(!customRoot, session.IsLegacy);
+        Assert.Equal(shared.Assets, path.Assets);
+        Assert.Equal(shared.Library, path.Library);
+        Assert.Equal(shared.Versions, path.Versions);
+        Assert.Equal(shared.Runtime, path.Runtime);
+        Assert.Equal(shared.Resource, path.Resource);
+        Assert.Equal(Path.Combine(session.Paths.RootDirectory, "instances", "main"), path.BasePath.TrimEnd(Path.DirectorySeparatorChar));
         string gameArguments = quickPlay
             ? """
               ["--username", "${auth_player_name}", "--gameDir", "${game_directory}",
@@ -63,7 +84,6 @@ public sealed class CmlLibLaunchModeTests
                }}
               """, new JsonVersionParserOptions());
         using IDisposable versionLifetime = Assert.IsAssignableFrom<IDisposable>(version);
-        MinecraftPath path = new(Path.Combine(Path.GetTempPath(), "launch-mode-instance"));
         MLaunchOption option = CmlLibGameLaunchService.CreateLaunchOption(Request(mode), "javaw.exe", path);
         option.StartVersion = version;
         MinecraftProcessBuilder builder = new(new RulesEvaluator(), new RulesEvaluatorContext(LauncherOSRule.Current), option);

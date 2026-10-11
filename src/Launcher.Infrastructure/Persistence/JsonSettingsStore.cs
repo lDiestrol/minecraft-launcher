@@ -21,6 +21,8 @@ public sealed class JsonSettingsStore : ISettingsStore
 
     public async Task<LauncherSettings> LoadAsync(CancellationToken cancellationToken = default)
     {
+        _paths.EnsureRootAvailable();
+        StoragePathPolicy.EnsureNoReparsePoints(_paths.SettingsFile);
         if (!File.Exists(_paths.SettingsFile))
         {
             return new LauncherSettings();
@@ -28,7 +30,8 @@ public sealed class JsonSettingsStore : ISettingsStore
 
         try
         {
-            string json = await File.ReadAllTextAsync(_paths.SettingsFile, cancellationToken);
+            using StreamReader reader = new(SafeLeafFile.OpenRead(_paths.SettingsFile));
+            string json = await reader.ReadToEndAsync(cancellationToken);
             if (string.IsNullOrWhiteSpace(json))
             {
                 _logger.Error("Settings file is empty; safe defaults will be used.");
@@ -56,11 +59,23 @@ public sealed class JsonSettingsStore : ISettingsStore
 
     public async Task SaveAsync(LauncherSettings settings, CancellationToken cancellationToken = default)
     {
-        Directory.CreateDirectory(_paths.RootDirectory);
-        string temporaryFile = _paths.SettingsFile + ".tmp";
-        string json = JsonSerializer.Serialize(settings, _jsonOptions);
+        _paths.EnsureRootAvailable();
+        StoragePathPolicy.EnsureNoReparsePoints(_paths.SettingsFile);
+        string temporaryFile = _paths.SettingsFile + $".{Guid.NewGuid():N}.tmp";
+        try
+        {
+            await using (FileStream stream = new(temporaryFile, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                await JsonSerializer.SerializeAsync(stream, settings, _jsonOptions, cancellationToken);
+                stream.Flush(flushToDisk: true);
+            }
 
-        await File.WriteAllTextAsync(temporaryFile, json, cancellationToken);
-        File.Move(temporaryFile, _paths.SettingsFile, overwrite: true);
+            StoragePathPolicy.EnsureNoReparsePoints(_paths.SettingsFile);
+            File.Move(temporaryFile, _paths.SettingsFile, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temporaryFile);
+        }
     }
 }

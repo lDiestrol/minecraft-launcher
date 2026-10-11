@@ -1,8 +1,8 @@
 # Запуск игры: стабильная основа v0.6.0 и реализация v0.6.1 для review
 
 Актуальный статус и планы launch modes: [PROJECT_LEDGER.md](PROJECT_LEDGER.md).
-Общий поток реализован в стабильной основе. Два режима добавлены в
-`feat/v061-singleplayer-launch` от интеграционной `feat/v0.6.1`; это ещё не выпуск
+Общий поток реализован в стабильной основе. Два режима и Storage Root объединены
+локально в `test/v061-pr10-pr11-integration` от `origin/feat/v0.6.1`; это ещё не выпуск
 v0.6.1. Версия приложения и зависимости остаются прежними.
 
 ## Режимы одного профиля
@@ -29,13 +29,23 @@ profile id, Minecraft/Fabric, nickname, RAM и данные исходного �
 это не автономный offline-режим без launcher server. Совместимость конкретного
 серверного модпака с локальными мирами требует отдельного реального smoke-теста.
 
+Исходные [Draft PR #10](https://github.com/lDiestrol/minecraft-launcher/pull/10) и
+[Draft PR #11](https://github.com/lDiestrol/minecraft-launcher/pull/11) остаются открытыми.
+`<GameData>` для обоих режимов определяется общим StorageRootResolver
+для App/guardian; legacy/default — `%LOCALAPPDATA%\MinecraftLauncher`.
+
 ## Поток запуска
+
+Локальный guardian использует crash-safe intent v3/witness v1 и атомарный JOB_LIST,
+QUERY witness наследуется основной JVM через explicit HANDLE_LIST. Защита и восстановление
+проверены в истории PR #11 с реальными Java17/21. Новый совместный прогон и ограничения
+Minecraft smoke/installed update приведены в [PROJECT_LEDGER.md](PROJECT_LEDGER.md).
 
 1. Выбранный `GameProfile` и явный режим преобразуются в `GameLaunchRequest`. Проверяются допустимость режима, profile id, версии, Fabric, nickname, RAM и server address.
 2. `LauncherOperationCoordinator` получает профильную межпроцессную блокировку и выполняет Pack Manifest v1 sync: полный SHA-256, загрузка/проверка staging, публикация и managed cleanup. При ошибке pack Minecraft не запускается; Repair заканчивается после этого этапа.
-3. Создаётся `%LOCALAPPDATA%\MinecraftLauncher\instances\<profile-id>` с отдельными `mods`, `config`, `saves`, `screenshots` и игровыми логами; проверяется свободное место.
+3. Используется `<GameData>\instances\<profile-id>` с отдельными `mods`, `config`, `saves`, `screenshots` и игровыми логами; проверяется свободное место на выбранном томе. Настроенный root обязан существовать; при его недоступности новый каталог не создаётся.
 4. Под shared-install lock CmlLib.Core проверяет Minecraft version и получает недостающие официальные Mojang metadata, client, libraries и assets.
-5. По version metadata CmlLib подготавливает совместимую Mojang Java runtime внутри managed-каталога Launcher. Перед запуском executable повторно проверяется на существование и принадлежность `%LOCALAPPDATA%\MinecraftLauncher\runtime`; Java из случайного `PATH` не выбирается.
+5. По version metadata CmlLib подготавливает совместимую Mojang Java runtime внутри managed-каталога Launcher. Перед запуском executable повторно проверяется на существование, reparse points и принадлежность `<GameData>\runtime`; Java из случайного `PATH` не выбирается.
 6. Через Fabric metadata проверяется и устанавливается ровно `loader.version` из профиля. `latest` автоматически не подставляется; для запуска используется version id, возвращённый installer.
 7. Общий helper CmlLib строит параметры процесса с offline session, выбранными Xmx, консервативным Xms и instance path. Серверный endpoint добавляется только в режиме `Server`; остальная подготовка одинакова.
 8. `GameProcessGuardianClient` передаёт запуск guardian-процессу, который запускает Java, фиксирует PID и пишет output с префиксом `[Minecraft]`. После защищённой передачи shared-install lock освобождается; guardian удерживает профильную защиту до выхода игры. Launcher ждёт exit code через `GuardedGameSession`.
@@ -60,6 +70,25 @@ Profile lock не допускает второй Play/Repair/Delete того ж
 указывают выбранный режим. После sync перед передачей в game service повторно
 проверяется cancellation token. Вторая кнопка использует существующий QuietButton,
 AutomationProperties.Name и стандартную клавиатурную навигацию; общий UI не переделан.
+
+App/guardian дополнительно удерживают storage session в per-user Control; выбор root
+нельзя изменить при открытом Launcher или активном guardian. Guardian сначала читает
+общий локальный root locator, затем валидирует request path и RootDirectory; request
+не выбирает root. App-host installed/portable/development запускается как прежде;
+при development-запуске через `dotnet MinecraftLauncher.dll` guardian получает путь
+entry assembly перед приватными аргументами. Pack staging остаётся внутри instance
+на том же томе назначения; формат guardian request, pack manifest и server protocol не меняется.
+
+После crash guardian защита не зависит от живого handle Launcher: основной JVM передаётся
+query-only witness именованного Job. Recovery под exclusive `.game.lock` допускается лишь
+при завершённом guardian и пустом Job либо отсутствующем имени по поддерживаемому
+intent v3/witness-v1 контракту; AccessDenied/unknown state fail-closed, таймаут очистки запрещён.
+Legacy intent без witness не применяет missing-Job pre-PID recovery. Пока существует Job
+с активными процессами, Play/Repair/Delete/root reconfiguration блокируются.
+Если основная JVM вышла, а потомок без witness остался внутри Job и имя исчезло,
+восстановление разрешено: **произвольные потомки после main exit не входят в lifetime гарантию**.
+Отсутствие имени не доказывает пустоту дерева. Guardian crash сообщает ошибку ожидания
+status/exit code, но не снимает durable защиту активной основной JVM и не убивает её.
 
 Нулевой exit code возвращает состояние «Minecraft завершён». Ненулевой код показывает короткую ошибку пользователю; полный игровой output и технические исключения остаются в launcher log.
 

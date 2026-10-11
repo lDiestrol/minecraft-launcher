@@ -21,20 +21,21 @@ public partial class App : Application
     private HttpClient? _packHttpClient;
     private HttpClient? _gameHttpClient;
     private IAppLogger? _logger;
+    private StorageRootSession? _storageSession;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-
-        LauncherDataPaths paths = new();
-        _logger = new FileAppLogger(paths);
-        _logger.Info($"Minecraft Launcher {LauncherVersion.Current} starting.");
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
 
         try
         {
+            _storageSession = new StorageRootResolver().OpenSession();
+            LauncherDataPaths paths = _storageSession.Paths;
+            _logger = new FileAppLogger(paths);
+            _logger.Info($"Minecraft Launcher {LauncherVersion.Current} starting; data root: {paths.RootDirectory}.");
             _httpClient = new HttpClient(new HttpClientHandler
             {
                 AllowAutoRedirect = false,
@@ -108,9 +109,10 @@ public partial class App : Application
         }
         catch (Exception exception)
         {
-            _logger.Error("Fatal error during application startup.", exception);
+            _logger?.Error("Fatal error during application startup.", exception);
             MessageBox.Show(
-                "Launcher не удалось запустить. Подробности записаны в лог.",
+                exception is StorageRootException ? exception.Message :
+                    "Launcher не удалось запустить. Подробности записаны в лог.",
                 "Minecraft Launcher",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
@@ -124,6 +126,7 @@ public partial class App : Application
         _httpClient?.Dispose();
         _packHttpClient?.Dispose();
         _gameHttpClient?.Dispose();
+        _storageSession?.Dispose();
         base.OnExit(e);
     }
 

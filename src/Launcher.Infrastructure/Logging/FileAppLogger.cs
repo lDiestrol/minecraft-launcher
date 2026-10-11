@@ -12,6 +12,8 @@ public sealed class FileAppLogger : IAppLogger
 
     public FileAppLogger(LauncherDataPaths paths)
     {
+        paths.EnsureRootAvailable();
+        StoragePathPolicy.EnsureNoReparsePoints(paths.LogsDirectory);
         Directory.CreateDirectory(paths.LogsDirectory);
         _logFile = Path.Combine(
             paths.LogsDirectory,
@@ -36,7 +38,9 @@ public sealed class FileAppLogger : IAppLogger
         {
             lock (_sync)
             {
-                File.AppendAllText(_logFile, entry.ToString(), Encoding.UTF8);
+                using FileStream stream = SafeLeafFile.OpenAppend(_logFile);
+                byte[] bytes = Encoding.UTF8.GetBytes(entry.ToString());
+                stream.Write(bytes);
             }
         }
         catch (IOException)
@@ -46,6 +50,10 @@ public sealed class FileAppLogger : IAppLogger
         catch (UnauthorizedAccessException)
         {
             // Logging must never terminate the launcher.
+        }
+        catch (StorageRootException)
+        {
+            // Refuse linked log files without following or replacing the link.
         }
     }
 }
