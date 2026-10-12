@@ -1,5 +1,19 @@
 # Единый журнал Minecraft Launcher
 
+> Lifecycle final fixes PR #14, 12.10.2026 (UTC+05:00), `feat/v061-gui-bootstrapper`.
+> NB-006/P2: UI не пишет stdin и не ждёт pipe mutex при Close/Cancel/Launch.
+> Единственный worker сериализует команды; Launch — одноразовый atomic signal,
+> Close сразу включает shutdown/watchdog, worker закрывает stdin по прежнему EOF/CTS
+> contract helper. Нет отдельной cancel frame, очереди потоков или очистки intent.
+> NB-007/P2: начальный exit1; exit0 только после verified typed success.
+> Свежие restore/build (0 errors/warnings), full xUnit486/486, отдельный crash10/10,
+> native178 production/180 diagnostic и 11 новых отдельных window/process cases
+> плюс прежний hung-helper/retry component прошли; format/diff/51 local links чистые.
+> Draft [PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14) остаётся
+> направлен в `feat/v0.6.1`; отдельный commit/push согласован владельцем.
+> Merge/release и ordinary-user GUI→helper→Coordinator→Setup E2E не выполнялись.
+> Ниже — исторический снимок предыдущего исправляющего коммита.
+
 > Review fixes PR #14, 12.10.2026 (UTC+05:00), та же `feat/v061-gui-bootstrapper`.
 > NB-001…NB-005 исправлены без изменений игрового Launcher/Coordinator/guardian,
 > StorageRootResolver и SDK161. Persistent ACL + проверенный pinned namespace,
@@ -539,6 +553,33 @@ code signing и срок; частые реальные диагностичес
 Необходимость ADR и машинной release checklist — предложения, не scope v0.6.1.
 
 ## 11. Журнал работ
+
+12.10.2026: после final review устранены NB-006 и NB-007 в той же feature-ветке.
+`sendFromWorker` запрещён UI thread, stdin принадлежит одному worker; pipe I/O
+не выполняется под общим mutex. Close/Cancel/Escape выставляют stop/shutdown
+и включают bounded close без ожидания записи. EOF отменяет helper operation;
+native GUI не завершает Setup/Minecraft и не удаляет launch/installation state.
+Launch использует одноразовый atomic signal, повторные clicks игнорируются;
+дополнительных writer threads нет, IDs1/2/3/5 остаются сериализованными.
+Начальный outcome1 подтверждён реальным exit процесса для Close/Escape/Cancel
+без begin/finish/success. Ещё проверены error/success/launch failure, насыщенный
+pipe с WriteFile под занятым mutex, responsive UI, EOF cancellation, ordered launch
+и watchdog с неотменяемым wait (~5s). Sentinel проверяется целиком; hung fixture
+остаётся живым после выхода GUI, cleanup только через handle созданного тестом child.
+Assertions дочерних fixtures имеют отдельный exit99, а не ожидаемый product exit1.
+11 новых process cases плюс прежний retry/hung component прошли в обоих outputs.
+Restore/build0 errors/warnings; full486/486 и crash10/10; native178/180; format,
+diff-check и51 local links чистые. Первый Release test дал10 fixture failures:
+solution собрал отсутствующий в solution TestHost в Debug, а Release copy target
+не получил DLL. Явная Release-сборка Core.Tests/TestHost устранила подготовку;
+повторный full/crash зелёные, project files не менялись. Первый diagnostic native
+запуск ошибочно получил внутренний vendor Setup (payload absent); правильный outer
+bundle прошёл180 checks. Native suites используют существующие hash-pinned test
+bundles; новый release packaging не выполнялся. EnableLUA=0 подтверждён чтением,
+не менялся. GUI→Setup, visual/cross-user/FAT/exFAT gates по-прежнему открыты.
+NB-001/004/005, managed helper, Coordinator/Storage Root/guardian/game modes,
+SDK161, packaging/feed и пользовательские данные не менялись. Публикация отдельного
+fix в существующий Draft PR согласована; merge/tag/release запрещены.
 
 12.10.2026: по независимому review PR #14 устранены NB-001(P1), NB-002…NB-005(P2)
 и устаревшее описание GUI/IPC/helper в architecture. Проверяется реальный owner/DACL

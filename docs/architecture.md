@@ -283,21 +283,29 @@ monotonic `id`, process nonce, `sid`, `command`; только preflight/install 
 `baseDirectory`. Нет полей executable/hash/product/runtime command line.
 
 Команды: inspect → preflight → install (progress) → success → optional launch;
-cancel передаёт CTS работающей операции. Responses — inspection/preflight/progress/
+helper поддерживает cancel/CTS, native GUI отменяет через EOF существующего stdin.
+Responses — inspection/preflight/progress/
 typed failure/success/launched. Native state machine требует ordered real Coordinator
 stages, но progress `Completed` **не** активирует успешный экран: необходим отдельный
 typed success с ожидаемыми App/GameData. Exit0/EOF/deadline не заменяют verification.
 Startup/preflight response deadline60s, install inactivity16min; эти UI deadlines
 закрывают IPC/cancel и **не** разрешают очистку intent/rollback или смену Storage Root.
 
-Shutdown отделён от cancel: после успеха/ошибки закрытие сигнализирует reader, не
-делает длительный join в UI. GUI остаётся жив до окончания worker; helper wait — 1s.
+Единственный worker владеет stdin, выполняет все WriteFile и закрывает pipe; общие
+mutex не удерживаются во время pipe I/O. UI Close/Cancel/Escape сразу выставляет
+stop/shutdown без ожидания mutex или записи; UI Launch только публикует одноразовый
+atomic signal. Worker опрашивает его в reader и отправляет ровно одну launch5 после
+install3 success; дополнительных writer threads/неограниченной очереди нет.
+Закрытие всегда сигнализирует reader, включая активную установку, и не делает
+длительный join в UI. GUI остаётся жив до окончания worker; helper wait — 1s.
 При зависшем driver/I/O через 5s watchdog завершает **только native GUI** вместе с его
 потоками; нет detach, уничтожения app при живом worker, kill Setup/Minecraft или
 удаления intent. EOF сохраняет прежний helper cancellation/recovery contract.
-При активной установке первое Close/Escape остаётся cancel с ожиданием безопасного
-результата. Retry ожидает завершения старого worker асинхронно. Exit code равен 1
-до подтверждения попытки; только typed success последней попытки возвращает 0.
+При активной установке EOF передаёт прежнюю CTS cancellation helper. GUI может
+завершиться до окончания helper/recovery; intent сохраняется, installer/game Job
+не завершаются GUI. При отказе создания watchdog timer завершается только GUI.
+Retry ожидает завершения старого worker асинхронно. Начальный exit code равен1,
+включая закрытие без первой попытки; только typed success последней попытки даёт0.
 Buttons закреплены снизу client area, при узком окне расположены вертикально;
 paths/status прокручиваются, MinTrackSize/WM_DPICHANGED ограничены monitor work area.
 

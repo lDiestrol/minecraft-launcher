@@ -16,23 +16,26 @@ constexpr UINT EventMessage = WM_APP + 1;
 struct event { std::wstring kind, message; json::object fields; };
 struct app {
     HINSTANCE instance{}; HWND window{}, label{}, folder{}, browse{}, paths{}, status{}, progress{}, install{}, cancel{}, details{};
-    HFONT font{}; std::thread worker; std::atomic_bool stop = false, shutdown = false, workerDone = true; std::mutex pipeLock; handle input;
+    HFONT font{}; std::thread worker; std::atomic_bool stop = false, shutdown = false, workerDone = true, launchRequested = false; std::mutex pipeLock; handle input;
     std::unique_ptr<bundle> payload;
     std::wstring sid, nonce, localData, game, base, installedApp, log, diagnosticImages, technical;
-    bool running = false, success = false, diagnostic = false, closing = false, pendingRetry = false; operationOutcome outcome; unsigned dpi = 96; unsigned long long nextId = 1, payloadBytes = 0; ULONGLONG closeStarted = 0;
+    bool running = false, success = false, diagnostic = false, closing = false, pendingRetry = false; operationOutcome outcome; unsigned dpi = 96; unsigned long long payloadBytes = 0; ULONGLONG closeStarted = 0;
     std::wstring launchId;
-    ~app() { shutdown = true; if (worker.joinable()) CancelSynchronousIo(worker.native_handle()); { std::lock_guard<std::mutex> lock(pipeLock); input.close(); } if (worker.joinable()) worker.join(); if (font) DeleteObject(font); }
+    ~app() { shutdown = true; if (worker.joinable()) { CancelSynchronousIo(worker.native_handle()); worker.join(); } input.close(); if (font) DeleteObject(font); }
     void post(std::wstring kind, std::wstring message = {}, json::object fields = {}) {
         auto e = std::make_unique<event>(event{std::move(kind), std::move(message), std::move(fields)});
         if (PostMessageW(window, EventMessage, 0, reinterpret_cast<LPARAM>(e.get()))) e.release();
     }
-    void send(const std::wstring& command, unsigned long long id, const std::wstring& selected = {}) {
-        std::lock_guard<std::mutex> lock(pipeLock); if (!input.valid()) return;
+    void sendFromWorker(const std::wstring& command, unsigned long long id, const std::wstring& selected = {}) {
+        if (GetCurrentThreadId() == GetWindowThreadProcessId(window, nullptr)) throw std::logic_error("pipe writes are forbidden on the UI thread");
+        if (shutdown) return;
+        if (!input.valid()) return; // stdin belongs exclusively to the single worker, never to UI callbacks.
         std::wstring body = L"{\"v\":1,\"id\":" + std::to_wstring(id) + L",\"nonce\":" + json::quote(nonce) + L",\"sid\":" + json::quote(sid) + L",\"command\":" + json::quote(command);
         if (!selected.empty()) body += L",\"baseDirectory\":" + json::quote(selected); body += L"}\n";
         std::string data = json::utf8(body);
         DWORD written = 0; check(WriteFile(input.h, data.data(), static_cast<DWORD>(data.size()), &written, nullptr)); check(written == data.size());
     }
+    void pollWorkerCommands() { if (launchRequested.exchange(false)) sendFromWorker(L"launch", 5); }
     void layout() {
         int scale = static_cast<int>(dpi); auto unit = [=](int n) { return MulDiv(n, scale, 96); };
         RECT client{}; GetClientRect(window, &client); auto positions = calculateLayout(client.right, client.bottom, dpi);
@@ -65,8 +68,11 @@ struct app {
         closing = true; shutdown = true; closeStarted = GetTickCount64();
         EnableWindow(install, FALSE); EnableWindow(cancel, FALSE);
         // Never wait for the pipe mutex or join on the UI thread while the worker is doing I/O.
-        if (worker.joinable()) CancelSynchronousIo(worker.native_handle());
-        if (workerDone) DestroyWindow(window); else SetTimer(window, 2, 20, nullptr);
+        if (workerDone) DestroyWindow(window);
+        else {
+            if (!SetTimer(window, 2, 20, nullptr)) ExitProcess(static_cast<UINT>(outcome.code));
+            if (worker.joinable()) CancelSynchronousIo(worker.native_handle());
+        }
     }
     void screenshot(const wchar_t* name) {
 #ifdef INSTALLER_DIAGNOSTIC
@@ -170,11 +176,13 @@ struct helper {
             PROCESS_INFORMATION createdProcess{}; std::wstring cwd = root + L"\\helper";
             check(CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, TRUE, CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW, block.data(), cwd.c_str(), &startup.StartupInfo, &createdProcess));
             process = handle(createdProcess.hProcess); handle thread(createdProcess.hThread);
-            { std::lock_guard<std::mutex> lock(a.pipeLock); a.input = std::move(parentInput); }
+            a.input = std::move(parentInput);
         } catch (...) { DeleteProcThreadAttributeList(list); throw; }
         DeleteProcThreadAttributeList(list);
     }
-    bool read(std::string& line, ULONGLONG timeout, const std::atomic_bool& shutdown) { return readHelperLine(output.h, process.h, shutdown, line, timeout); }
+    bool read(app& a, std::string& line, ULONGLONG timeout) {
+        return readHelperLine(output.h, process.h, a.shutdown, line, timeout, [&] { a.pollWorkerCommands(); });
+    }
 };
 
 void installWorker(app& a, std::wstring selected) {
@@ -191,17 +199,17 @@ void installWorker(app& a, std::wstring selected) {
         if (a.stop) throw std::runtime_error("extraction cancelled"); a.post(L"status", L"Проверка установочного помощника…");
         { std::lock_guard<std::mutex> lock(a.pipeLock); a.nonce = guid(); }
         auto protection = namespaceGuard.handles(); for (const auto& file : pinnedPayload) protection.push_back(file.h);
-        helper managed(a, root, protection); a.send(L"inspect", 1); unsigned long long active = 1; bool completed = false, launched = false;
+        helper managed(a, root, protection); a.sendFromWorker(L"inspect", 1); unsigned long long active = 1; bool completed = false, launched = false;
         responseContract contract(a.nonce, a.sid, selected + L"\\App", a.launchId);
         std::string line;
-        while (managed.read(line, active == 3 ? 16ULL * 60 * 1000 : completed ? 24ULL * 60 * 60 * 1000 : 60000, a.shutdown)) {
+        while (managed.read(a, line, active == 3 ? 16ULL * 60 * 1000 : completed ? 24ULL * 60 * 60 * 1000 : 60000)) {
             auto responseText = json::wide(line); auto fields = json::parser(responseText).read();
             auto type = contract.accept(fields);
             if (type == L"inspection" && active == 1) {
-                a.post(L"inspection", {}, fields); if (a.stop) { a.send(L"cancel", 4); throw std::runtime_error("installation cancelled"); }
-                active = 2; a.send(L"preflight", active, selected);
+                a.post(L"inspection", {}, fields); if (a.stop) throw std::runtime_error("installation cancelled");
+                active = 2; a.sendFromWorker(L"preflight", active, selected);
             } else if (type == L"preflight" && active == 2) {
-                a.post(L"preflight", {}, fields); if (a.stop) throw std::runtime_error("installation cancelled"); active = 3; a.send(L"install", active, selected);
+                a.post(L"preflight", {}, fields); if (a.stop) throw std::runtime_error("installation cancelled"); active = 3; a.sendFromWorker(L"install", active, selected);
             } else if (type == L"progress" && active == 3 && !completed) {
                 auto stage = json::text(fields, L"stage"); if (stage != L"Preflight" && stage != L"Storage" && stage != L"Setup" && stage != L"Verification" && stage != L"Completed") throw std::runtime_error("unknown installation stage");
                 a.post(L"status", stage == L"Completed" ? L"Проверки закончены. Ожидаем итогового подтверждения помощника…" : json::text(fields, L"message"));
@@ -216,13 +224,13 @@ void installWorker(app& a, std::wstring selected) {
             if (!completed) a.post(L"ended", L"Связь с помощником завершена. Успех не подтверждён; игровые данные сохранены.");
             else if (!launched) a.post(L"failure", L"Установка была проверена, но связь с помощником потеряна. Повторите проверку установки для безопасного запуска; данные сохранены.");
         }
-        { std::lock_guard<std::mutex> lock(a.pipeLock); a.input.close(); }
+        a.input.close();
         WaitForSingleObject(managed.process.h, 1000); // EOF asks the helper to cancel/recover; never terminate Setup here.
     } catch (const std::exception& e) {
         if (!a.shutdown) a.post(L"failure", a.stop ? L"Установка отменена. Данные сохранены; можно повторить попытку." :
             L"Установку завершить не удалось. Данные сохранены. Проверьте выбранный каталог, диск и целостность установщика.",
             {{L"detail", {json::wide(e.what()), true}}});
-        { std::lock_guard<std::mutex> lock(a.pipeLock); a.input.close(); }
+        a.input.close();
     }
 }
 
@@ -286,11 +294,11 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
                 MessageBoxW(window, detail.c_str(), L"Технические подробности", MB_OK | MB_ICONINFORMATION); return 0;
             }
             if (LOWORD(w) == 107 && !a->running && !a->closing) {
-                if (a->success) { EnableWindow(a->install, FALSE); a->send(L"launch", a->nextId); return 0; }
+                if (a->success) { if (IsWindowEnabled(a->install)) { EnableWindow(a->install, FALSE); a->launchRequested = true; } return 0; }
                 if (!a->workerDone) { a->pendingRetry = true; EnableWindow(a->install, FALSE); return 0; }
                 a->pendingRetry = false;
                 if (a->worker.joinable()) a->worker.join(); wchar_t text[2050]{}; GetWindowTextW(a->folder, text, 2050);
-                a->outcome.begin(); a->workerDone = false; a->shutdown = false; a->running = true; a->stop = false; a->success = false; a->nonce.clear(); EnableWindow(a->folder, FALSE); EnableWindow(a->browse, FALSE); EnableWindow(a->install, FALSE);
+                a->outcome.begin(); a->workerDone = false; a->shutdown = false; a->launchRequested = false; a->running = true; a->stop = false; a->success = false; a->nonce.clear(); EnableWindow(a->folder, FALSE); EnableWindow(a->browse, FALSE); EnableWindow(a->install, FALSE);
                 SetWindowTextW(a->cancel, L"Отменить"); SendMessageW(a->progress, PBM_SETMARQUEE, TRUE, 50); a->worker = std::thread(installWorker, std::ref(*a), std::wstring(text)); return 0;
             }
             if (LOWORD(w) == 108) { SendMessageW(window, WM_CLOSE, 0, 0); return 0; } break;
@@ -313,7 +321,7 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
                 a->screenshot(L"preflight.bmp");
             } else if (e->kind == L"status") SetWindowTextW(a->status, e->message.c_str());
             else if (e->kind == L"success") {
-                a->nextId = 5; a->installedApp = json::text(e->fields, L"app"); a->game = json::text(e->fields, L"game"); a->preview(); a->finish(L"Minecraft Launcher успешно установлен.\r\n" + a->installedApp, true); a->screenshot(L"success.bmp");
+                a->installedApp = json::text(e->fields, L"app"); a->game = json::text(e->fields, L"game"); a->preview(); a->finish(L"Minecraft Launcher успешно установлен.\r\n" + a->installedApp, true); a->screenshot(L"success.bmp");
                 if (a->diagnostic) PostMessageW(window, WM_COMMAND, 107, 0);
             } else if (e->kind == L"launched") {
 #ifdef INSTALLER_DIAGNOSTIC
@@ -331,7 +339,8 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
             return 0;
         }
         case WM_CLOSE:
-            if (a->running) { if (!a->stop.exchange(true)) a->send(L"cancel", 4); SetWindowTextW(a->status, L"Отмена установки… Ожидаем безопасного завершения помощника."); EnableWindow(a->cancel, FALSE); return 0; }
+            if (a->running) { a->stop = true; SetWindowTextW(a->status, L"Отмена установки… Данные и состояние восстановления сохраняются."); }
+            // The worker closes stdin (EOF => existing helper CTS cancellation). UI never locks or writes the pipe.
             if (!a->closing) a->requestClose(); return 0;
         case WM_DESTROY: PostQuitMessage(0); return 0;
         }

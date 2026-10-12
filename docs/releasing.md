@@ -72,7 +72,37 @@ payload integrity, CreateNew/retry, отмена до и во время extract
 Format verify, release-feed tests и изолированный полный packaging успешны.
 Packaging сообщает только ожидаемые unsigned warnings; это не compiler warnings.
 
-### Review fixes NB-001…NB-005, 12.10.2026
+### Lifecycle final fixes NB-006/NB-007, 12.10.2026
+
+В UI больше нет синхронной записи stdin или ожидания pipe mutex для Close/Cancel/Launch.
+Один worker выполняет ordered writes1/2/3/5; Launch публикуется atomic signal один раз.
+Close сразу запускает shutdown/watchdog, worker закрывает stdin: прежний helper EOF/CTS
+contract отменяет установку без native kill Setup/Minecraft или удаления intent.
+Зависший helper может пережить GUI; pinned handles/recovery сохраняют прежний contract.
+Начальный outcome1, включая Open→Close/Escape/Cancel без попытки; только typed success0.
+
+Свежие проверки: restore, managed build0 errors/warnings, full486/486, crash/recovery10/10,
+native178/180 `/W4 /WX /MT`, format и diff-check,51 local links. В обоих native outputs
+прошли11 новых process/window cases плюс прежний retry/hung-helper component:
+6 initial/error/success/launch-failure exit cases и5 pipe cases (cancel-blocked,
+launch-blocked, EOF, ordered/deduplicated launch, watchdog). Заполненность pipe
+подтверждается PeekNamedPipe/реальной quota и незавершённым WriteFile; WM_CLOSE
+и UI probe обрабатываются, отменённая запись получает ERROR_OPERATION_ABORTED.
+С неотменяемым wait watchdog завершает GUI примерно через5s, child остаётся жив.
+Во всех pipe cases sentinel проверяется целиком; assertion failures имеют exit99,
+чтобы не выдавать тестовую ошибку за ожидаемый product exit1. Это component/process
+regression, не installed GUI E2E, не доказательство поведения зависшего FS driver.
+
+Первый Release full имел10 отсутствующих-host failures: solution собрал TestHost
+в Debug; явная Release-сборка Core.Tests/TestHost подготовила DLL, повторный full
+и crash прошли без изменения project files. Native suites используют прежние
+hash-pinned outer test bundles; неверно выбранный внутренний vendor Setup был
+отвергнут (payload absent), затем diagnostic outer прошёл180. Packaging в этом
+lifecycle fix не повторялся. EnableLUA=0 не менялся; ordinary-user GUI→Setup,
+cross-user/FAT/exFAT/visual/installed update и signing gates остаются обязательными.
+До реального GUI E2E PR не объявляется READY TO MERGE; release не разрешён.
+
+### Исторический снимок review fixes NB-001…NB-005, 12.10.2026
 
 Изменения в той же ветке / [Draft PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14),
 без изменения Launcher, guardian, StorageRootResolver, Coordinator и SDK161.

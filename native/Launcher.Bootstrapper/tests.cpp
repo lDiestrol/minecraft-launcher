@@ -79,7 +79,7 @@ void newSafetyTests(const std::wstring& root, bundle& payload) {
     rejects([&] { verifyDirectoryHandle(linked.h, link, sid, true); }); require(std::filesystem::is_empty(target));
 }
 void layoutAndOutcomeTests() {
-    operationOutcome result; result.begin(); result.confirm(false); result.begin(); require(result.code == 1); result.confirm(true); require(result.code == 0);
+    operationOutcome result; require(result.code == 1); result.begin(); result.confirm(false); result.begin(); require(result.code == 1); result.confirm(true); require(result.code == 0);
     result.begin(); result.confirm(false); require(result.code == 1);
     for (unsigned dpi : {96U, 120U, 144U, 192U}) for (int width : {840, 1366}) {
         // 1366x768 with a 40px taskbar and scaled title/frame; small window tests stacked actions.
