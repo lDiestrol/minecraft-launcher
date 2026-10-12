@@ -3,6 +3,9 @@
 #define NOMINMAX
 #include "storage.h"
 #include "protocol.h"
+#include "safety.h"
+#include "lifecycle.h"
+#include "layout.h"
 #include <commctrl.h>
 #include <shobjidl.h>
 #include <thread>
@@ -13,10 +16,12 @@ constexpr UINT EventMessage = WM_APP + 1;
 struct event { std::wstring kind, message; json::object fields; };
 struct app {
     HINSTANCE instance{}; HWND window{}, label{}, folder{}, browse{}, paths{}, status{}, progress{}, install{}, cancel{}, details{};
-    HFONT font{}; std::thread worker; std::atomic_bool stop = false; std::mutex pipeLock; handle input;
+    HFONT font{}; std::thread worker; std::atomic_bool stop = false, shutdown = false, workerDone = true; std::mutex pipeLock; handle input;
+    std::unique_ptr<bundle> payload;
     std::wstring sid, nonce, localData, game, base, installedApp, log, diagnosticImages, technical;
-    bool running = false, success = false, diagnostic = false; int exitCode = 0; unsigned dpi = 96; unsigned long long nextId = 1, payloadBytes = 0;
-    ~app() { { std::lock_guard<std::mutex> lock(pipeLock); input.close(); } if (worker.joinable()) worker.join(); if (font) DeleteObject(font); }
+    bool running = false, success = false, diagnostic = false, closing = false, pendingRetry = false; operationOutcome outcome; unsigned dpi = 96; unsigned long long nextId = 1, payloadBytes = 0; ULONGLONG closeStarted = 0;
+    std::wstring launchId;
+    ~app() { shutdown = true; if (worker.joinable()) CancelSynchronousIo(worker.native_handle()); { std::lock_guard<std::mutex> lock(pipeLock); input.close(); } if (worker.joinable()) worker.join(); if (font) DeleteObject(font); }
     void post(std::wstring kind, std::wstring message = {}, json::object fields = {}) {
         auto e = std::make_unique<event>(event{std::move(kind), std::move(message), std::move(fields)});
         if (PostMessageW(window, EventMessage, 0, reinterpret_cast<LPARAM>(e.get()))) e.release();
@@ -30,18 +35,12 @@ struct app {
     }
     void layout() {
         int scale = static_cast<int>(dpi); auto unit = [=](int n) { return MulDiv(n, scale, 96); };
-        RECT client{}; GetClientRect(window, &client); int width = client.right;
+        RECT client{}; GetClientRect(window, &client); auto positions = calculateLayout(client.right, client.bottom, dpi);
         if (font) DeleteObject(font); font = CreateFontW(-unit(16), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
         for (HWND child : {label, folder, browse, paths, status, install, cancel, details}) SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
-        MoveWindow(label, unit(24), unit(16), width - unit(48), unit(24), TRUE);
-        MoveWindow(folder, unit(24), unit(48), width - unit(158), unit(30), TRUE);
-        MoveWindow(browse, width - unit(124), unit(48), unit(100), unit(30), TRUE);
-        MoveWindow(paths, unit(24), unit(92), width - unit(48), unit(125), TRUE);
-        MoveWindow(status, unit(24), unit(220), width - unit(48), unit(100), TRUE);
-        MoveWindow(progress, unit(24), unit(330), width - unit(48), unit(22), TRUE);
-        MoveWindow(details, unit(24), unit(374), unit(144), unit(34), TRUE);
-        MoveWindow(install, width - unit(410), unit(374), unit(260), unit(34), TRUE);
-        MoveWindow(cancel, width - unit(132), unit(374), unit(108), unit(34), TRUE);
+        auto move = [](HWND child, const RECT& r) { MoveWindow(child, r.left, r.top, r.right - r.left, r.bottom - r.top, TRUE); };
+        move(label, positions.label); move(folder, positions.folder); move(browse, positions.browse); move(paths, positions.paths); move(status, positions.status);
+        move(progress, positions.progress); move(details, positions.details); move(install, positions.install); move(cancel, positions.cancel);
     }
     void preview() {
         wchar_t text[2050]{}; GetWindowTextW(folder, text, 2050);
@@ -56,10 +55,18 @@ struct app {
         SetWindowTextW(paths, display.c_str());
     }
     void finish(const std::wstring& message, bool ok) {
+        outcome.confirm(ok);
         running = false; success = ok; SetWindowTextW(status, message.c_str()); SendMessageW(progress, PBM_SETMARQUEE, FALSE, 0);
         EnableWindow(folder, !ok); EnableWindow(browse, !ok); EnableWindow(install, TRUE); EnableWindow(cancel, TRUE);
         SetWindowTextW(install, ok ? L"&Запустить Minecraft Launcher" : L"&Повторить установку"); SetWindowTextW(cancel, L"&Закрыть");
         EnableWindow(details, TRUE);
+    }
+    void requestClose() {
+        closing = true; shutdown = true; closeStarted = GetTickCount64();
+        EnableWindow(install, FALSE); EnableWindow(cancel, FALSE);
+        // Never wait for the pipe mutex or join on the UI thread while the worker is doing I/O.
+        if (worker.joinable()) CancelSynchronousIo(worker.native_handle());
+        if (workerDone) DestroyWindow(window); else SetTimer(window, 2, 20, nullptr);
     }
     void screenshot(const wchar_t* name) {
 #ifdef INSTALLER_DIAGNOSTIC
@@ -133,7 +140,7 @@ void validateExtraction(const std::wstring& base, const std::wstring& game, cons
 
 struct helper {
     handle process, output, errors;
-    helper(app& a, const std::wstring& root) {
+    helper(app& a, const std::wstring& root, const std::vector<HANDLE>& protection) {
         std::wstring exe = root + L"\\helper\\Launcher.InstallHelper.exe"; noLinks(exe);
         SECURITY_ATTRIBUTES inherit{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE}; HANDLE inputRead = nullptr, inputWrite = nullptr, outputRead = nullptr, outputWrite = nullptr;
         check(CreatePipe(&inputRead, &inputWrite, &inherit, 0)); handle childInput(inputRead), parentInput(inputWrite); check(SetHandleInformation(parentInput.h, HANDLE_FLAG_INHERIT, 0));
@@ -143,15 +150,23 @@ struct helper {
         SIZE_T size = 0; InitializeProcThreadAttributeList(nullptr, 1, 0, &size); std::vector<BYTE> attributes(size); auto list = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributes.data());
         check(InitializeProcThreadAttributeList(list, 1, 0, &size));
         try {
-            HANDLE handles[] = {childInput.h, childOutput.h, errors.h}; check(UpdateProcThreadAttribute(list, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handles, sizeof(handles), nullptr, nullptr));
+            // Keep namespace/file pins alive even if this GUI crashes or reaches its shutdown watchdog.
+            // These copies have only the original read/security-query rights, not write/delete rights.
+            inheritedPins pins(protection); auto handles = pins.values; handles.insert(handles.end(), {childInput.h, childOutput.h, errors.h});
+            check(UpdateProcThreadAttribute(list, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handles.data(), handles.size() * sizeof(HANDLE), nullptr, nullptr));
             STARTUPINFOEXW startup{}; startup.StartupInfo.cb = sizeof(startup); startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
             startup.StartupInfo.hStdInput = childInput.h; startup.StartupInfo.hStdOutput = childOutput.h; startup.StartupInfo.hStdError = errors.h; startup.lpAttributeList = list;
             FILETIME created{}, exited{}, kernel{}, user{}; check(GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user)); ULARGE_INTEGER ticks{}; ticks.LowPart = created.dwLowDateTime; ticks.HighPart = created.dwHighDateTime;
             std::wstring command = quoteArgument(exe) + L" " + a.nonce + L" " + std::to_wstring(GetCurrentProcessId()) + L" " + std::to_wstring(ticks.QuadPart + 504911232000000000ULL) + L" " + quoteArgument(a.sid);
+#ifdef INSTALLER_DIAGNOSTIC
+            command += L" " + a.launchId;
+#endif
             struct compare { bool operator()(const std::wstring& x, const std::wstring& y) const { return _wcsicmp(x.c_str(), y.c_str()) < 0; } };
             std::map<std::wstring, std::wstring, compare> env; LPWCH inherited = GetEnvironmentStringsW(); check(inherited != nullptr);
             for (auto p = inherited; *p; p += wcslen(p) + 1) { std::wstring entry(p); auto equals = entry.find(L'=', 1); if (equals != std::wstring::npos) env[entry.substr(0, equals)] = entry.substr(equals + 1); } FreeEnvironmentStringsW(inherited);
-            env[L"TEMP"] = root; env[L"TMP"] = root; std::wstring block; for (const auto& pair : env) { block += pair.first + L"=" + pair.second; block += L'\0'; } block += L'\0';
+            env[L"TEMP"] = root; env[L"TMP"] = root;
+            std::wstring pinList; for (HANDLE pin : pins.values) { if (!pinList.empty()) pinList += L','; pinList += std::to_wstring(reinterpret_cast<uintptr_t>(pin)); }
+            env[L"LAUNCHER_BOOTSTRAPPER_READ_PINS"] = pinList; std::wstring block; for (const auto& pair : env) { block += pair.first + L"=" + pair.second; block += L'\0'; } block += L'\0';
             PROCESS_INFORMATION createdProcess{}; std::wstring cwd = root + L"\\helper";
             check(CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, TRUE, CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW, block.data(), cwd.c_str(), &startup.StartupInfo, &createdProcess));
             process = handle(createdProcess.hProcess); handle thread(createdProcess.hThread);
@@ -159,37 +174,27 @@ struct helper {
         } catch (...) { DeleteProcThreadAttributeList(list); throw; }
         DeleteProcThreadAttributeList(list);
     }
-    bool read(std::string& line, ULONGLONG timeout) {
-        line.clear(); char c = 0; DWORD got = 0; ULONGLONG started = GetTickCount64();
-        for (;;) {
-            DWORD available = 0;
-            if (!PeekNamedPipe(output.h, nullptr, 0, nullptr, &available, nullptr)) { if (GetLastError() == ERROR_BROKEN_PIPE) break; check(false); }
-            if (!available) {
-                if (WaitForSingleObject(process.h, 0) == WAIT_OBJECT_0) break;
-                if (GetTickCount64() - started > timeout) throw std::runtime_error("helper response deadline exceeded; no cleanup authorized");
-                Sleep(10); continue;
-            }
-            check(ReadFile(output.h, &c, 1, &got, nullptr)); if (!got) break;
-            if (c == '\n') return true; if (line.size() >= 32768) throw std::runtime_error("oversized helper response"); line += c;
-        }
-        if (!line.empty()) throw std::runtime_error("truncated helper response"); return false;
-    }
+    bool read(std::string& line, ULONGLONG timeout, const std::atomic_bool& shutdown) { return readHelperLine(output.h, process.h, shutdown, line, timeout); }
 };
 
 void installWorker(app& a, std::wstring selected) {
+    struct completion { app& a; ~completion() { a.workerDone = true; a.post(L"worker-finished"); } } completedWorker{a};
     try {
         selected = normalize(selected); std::wstring actualGame = discoverGame(a.localData); validateExtraction(selected, actualGame, a.localData);
-        bundle payload; ULARGE_INTEGER available{}; check(GetDiskFreeSpaceExW(selected.substr(0, 3).c_str(), &available, nullptr, nullptr));
+        // Reuse the original pinned bundle, never reopen the executable path after UI selection/retry.
+        bundle& payload = *a.payload; ULARGE_INTEGER available{}; check(GetDiskFreeSpaceExW(selected.substr(0, 3).c_str(), &available, nullptr, nullptr));
         if (available.QuadPart < payload.bytes + 512ULL * 1024 * 1024) throw std::runtime_error("insufficient extraction space");
         a.post(L"status", L"Подготовка установочных файлов на выбранном диске…");
-        makeDirectory(selected); makeDirectory(selected + L"\\.launcher-install");
-        std::wstring root = selected + L"\\.launcher-install\\bootstrap-" + guid(); privateDirectory(root, a.sid); payload.extract(root, a.stop);
+        secureNamespace namespaceGuard(selected, a.sid); namespaceGuard.child(selected + L"\\.launcher-install");
+        std::wstring root = selected + L"\\.launcher-install\\bootstrap-" + guid(); namespaceGuard.child(root, true); payload.extract(root, a.stop);
+        auto pinnedPayload = payload.pinExtracted(root); namespaceGuard.recheck();
         if (a.stop) throw std::runtime_error("extraction cancelled"); a.post(L"status", L"Проверка установочного помощника…");
         { std::lock_guard<std::mutex> lock(a.pipeLock); a.nonce = guid(); }
-        helper managed(a, root); a.send(L"inspect", 1); unsigned long long active = 1; bool completed = false, launched = false;
-        responseContract contract(a.nonce, a.sid, selected + L"\\App");
+        auto protection = namespaceGuard.handles(); for (const auto& file : pinnedPayload) protection.push_back(file.h);
+        helper managed(a, root, protection); a.send(L"inspect", 1); unsigned long long active = 1; bool completed = false, launched = false;
+        responseContract contract(a.nonce, a.sid, selected + L"\\App", a.launchId);
         std::string line;
-        while (managed.read(line, active == 3 ? 16ULL * 60 * 1000 : completed ? 24ULL * 60 * 60 * 1000 : 60000)) {
+        while (managed.read(line, active == 3 ? 16ULL * 60 * 1000 : completed ? 24ULL * 60 * 60 * 1000 : 60000, a.shutdown)) {
             auto responseText = json::wide(line); auto fields = json::parser(responseText).read();
             auto type = contract.accept(fields);
             if (type == L"inspection" && active == 1) {
@@ -203,16 +208,18 @@ void installWorker(app& a, std::wstring selected) {
             } else if (type == L"success" && active == 3 && !completed) {
                 if (_wcsicmp(json::text(fields, L"app").c_str(), (selected + L"\\App").c_str())) throw std::runtime_error("unexpected installed App");
                 completed = true; active = 5; a.post(L"success", {}, fields);
-            } else if (type == L"launched" && active == 5 && completed) { launched = true; a.post(L"launched"); break; }
+            } else if (type == L"launched" && active == 5 && completed) { launched = true; a.post(L"launched", {}, fields); break; }
             else if (type == L"failure") { a.post(L"failure", json::text(fields, L"message"), fields); break; }
             else throw std::runtime_error("unexpected helper state transition");
         }
-        if (!completed) a.post(L"ended", L"Связь с помощником завершена. Успех не подтверждён; игровые данные сохранены.");
-        else if (!launched) a.post(L"failure", L"Установка была проверена, но связь с помощником потеряна. Повторите проверку установки для безопасного запуска; данные сохранены.");
+        if (!a.shutdown) {
+            if (!completed) a.post(L"ended", L"Связь с помощником завершена. Успех не подтверждён; игровые данные сохранены.");
+            else if (!launched) a.post(L"failure", L"Установка была проверена, но связь с помощником потеряна. Повторите проверку установки для безопасного запуска; данные сохранены.");
+        }
         { std::lock_guard<std::mutex> lock(a.pipeLock); a.input.close(); }
-        WaitForSingleObject(managed.process.h, 30000);
+        WaitForSingleObject(managed.process.h, 1000); // EOF asks the helper to cancel/recover; never terminate Setup here.
     } catch (const std::exception& e) {
-        a.post(L"failure", a.stop ? L"Установка отменена. Данные сохранены; можно повторить попытку." :
+        if (!a.shutdown) a.post(L"failure", a.stop ? L"Установка отменена. Данные сохранены; можно повторить попытку." :
             L"Установку завершить не удалось. Данные сохранены. Проверьте выбранный каталог, диск и целостность установщика.",
             {{L"detail", {json::wide(e.what()), true}}});
         { std::lock_guard<std::mutex> lock(a.pipeLock); a.input.close(); }
@@ -242,7 +249,7 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
             a->label = control(L"STATIC", L"Основной &каталог установки:", SS_LEFT, 109);
             a->folder = control(L"EDIT", a->base.c_str(), WS_TABSTOP | ES_AUTOHSCROLL | WS_BORDER, 101); SendMessageW(a->folder, EM_LIMITTEXT, 2048, 0);
             a->browse = control(L"BUTTON", L"&Выбрать…", WS_TABSTOP, 102); a->paths = control(L"EDIT", L"", WS_TABSTOP | WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL, 103);
-            a->status = control(L"STATIC", L"Выберите папку. App и GameData хранятся отдельно. Перенос существующих данных не выполняется.", SS_LEFT, 104);
+            a->status = control(L"EDIT", L"Выберите папку. App и GameData хранятся отдельно. Перенос существующих данных не выполняется.", WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL, 104);
             a->progress = control(PROGRESS_CLASSW, L"", PBS_MARQUEE, 105); a->details = control(L"BUTTON", L"П&одробности", WS_TABSTOP, 106);
             a->install = control(L"BUTTON", L"&Установить", WS_TABSTOP | BS_DEFPUSHBUTTON, 107); a->cancel = control(L"BUTTON", L"&Отмена", WS_TABSTOP, 108);
             EnableWindow(a->details, FALSE); a->dpi = GetDpiForWindow(window); a->layout(); a->preview();
@@ -250,9 +257,23 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
             if (a->diagnostic) SetTimer(window, 1, 700, nullptr); return 0;
         }
         case WM_SIZE: a->layout(); return 0;
-        case WM_GETMINMAXINFO: reinterpret_cast<MINMAXINFO*>(l)->ptMinTrackSize = {MulDiv(680, a->dpi, 96), MulDiv(485, a->dpi, 96)}; return 0;
-        case WM_DPICHANGED: { a->dpi = HIWORD(w); auto r = reinterpret_cast<RECT*>(l); SetWindowPos(window, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top, SWP_NOZORDER | SWP_NOACTIVATE); a->layout(); return 0; }
-        case WM_TIMER: if (w == 1) { KillTimer(window, 1); a->screenshot(L"selection.bmp"); PostMessageW(window, WM_COMMAND, 107, 0); } return 0;
+        case WM_GETMINMAXINFO: {
+            MONITORINFO monitor{sizeof(MONITORINFO)}; check(GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor));
+            reinterpret_cast<MINMAXINFO*>(l)->ptMinTrackSize = {std::min<LONG>(MulDiv(420, a->dpi, 96), monitor.rcWork.right - monitor.rcWork.left), std::min<LONG>(MulDiv(360, a->dpi, 96), monitor.rcWork.bottom - monitor.rcWork.top)}; return 0;
+        }
+        case WM_DPICHANGED: {
+            a->dpi = HIWORD(w); MONITORINFO monitor{sizeof(MONITORINFO)}; auto proposed = reinterpret_cast<RECT*>(l);
+            check(GetMonitorInfoW(MonitorFromRect(proposed, MONITOR_DEFAULTTONEAREST), &monitor)); auto r = fitWorkArea(*proposed, monitor.rcWork);
+            SetWindowPos(window, nullptr, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOZORDER | SWP_NOACTIVATE); a->layout(); return 0;
+        }
+        case WM_TIMER:
+            if (w == 1) { KillTimer(window, 1); a->screenshot(L"selection.bmp"); PostMessageW(window, WM_COMMAND, 107, 0); }
+            else if (w == 2 && a->closing) {
+                if (a->workerDone) DestroyWindow(window);
+                // A stuck filesystem driver must not make join unbounded. Exit only this GUI; keep durable recovery state and installer tree untouched.
+                else if (GetTickCount64() - a->closeStarted >= 5000) ExitProcess(static_cast<UINT>(a->outcome.code));
+            }
+            return 0;
         case WM_COMMAND:
             if (LOWORD(w) == IDOK) { PostMessageW(window, WM_COMMAND, 107, 0); return 0; }
             if (LOWORD(w) == IDCANCEL) { SendMessageW(window, WM_CLOSE, 0, 0); return 0; }
@@ -264,15 +285,25 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
                 if (!log.empty()) { auto h = readFile(log, FILE_SHARE_READ | FILE_SHARE_WRITE); auto n = std::min<unsigned long long>(length(h.h), 16384); std::string text(static_cast<size_t>(n), '\0'); readExact(h.h, text.data(), static_cast<DWORD>(n)); detail += L"\r\n" + json::wide(text); }
                 MessageBoxW(window, detail.c_str(), L"Технические подробности", MB_OK | MB_ICONINFORMATION); return 0;
             }
-            if (LOWORD(w) == 107 && !a->running) {
+            if (LOWORD(w) == 107 && !a->running && !a->closing) {
                 if (a->success) { EnableWindow(a->install, FALSE); a->send(L"launch", a->nextId); return 0; }
+                if (!a->workerDone) { a->pendingRetry = true; EnableWindow(a->install, FALSE); return 0; }
+                a->pendingRetry = false;
                 if (a->worker.joinable()) a->worker.join(); wchar_t text[2050]{}; GetWindowTextW(a->folder, text, 2050);
-                a->running = true; a->stop = false; a->success = false; a->nonce.clear(); EnableWindow(a->folder, FALSE); EnableWindow(a->browse, FALSE); EnableWindow(a->install, FALSE);
+                a->outcome.begin(); a->workerDone = false; a->shutdown = false; a->running = true; a->stop = false; a->success = false; a->nonce.clear(); EnableWindow(a->folder, FALSE); EnableWindow(a->browse, FALSE); EnableWindow(a->install, FALSE);
                 SetWindowTextW(a->cancel, L"Отменить"); SendMessageW(a->progress, PBM_SETMARQUEE, TRUE, 50); a->worker = std::thread(installWorker, std::ref(*a), std::wstring(text)); return 0;
             }
             if (LOWORD(w) == 108) { SendMessageW(window, WM_CLOSE, 0, 0); return 0; } break;
         case EventMessage: {
             std::unique_ptr<event> e(reinterpret_cast<event*>(l));
+            if (e->kind == L"worker-finished") {
+                // A queued completion from a previous attempt must not destroy a newer worker's app.
+                if (!a->workerDone) return 0;
+                if (a->closing) DestroyWindow(window);
+                else if (a->pendingRetry) { a->pendingRetry = false; PostMessageW(window, WM_COMMAND, 107, 0); }
+                return 0;
+            }
+            if (a->closing) return 0;
             if (e->kind == L"inspection") {
                 a->game = json::text(e->fields, L"game"); a->preview(); if (json::boolean(e->fields, L"existing")) SetWindowTextW(a->status, L"Обнаружена существующая установка. Её принятие без установочной записи или перенос не выполняются.");
             } else if (e->kind == L"preflight") {
@@ -284,14 +315,24 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
             else if (e->kind == L"success") {
                 a->nextId = 5; a->installedApp = json::text(e->fields, L"app"); a->game = json::text(e->fields, L"game"); a->preview(); a->finish(L"Minecraft Launcher успешно установлен.\r\n" + a->installedApp, true); a->screenshot(L"success.bmp");
                 if (a->diagnostic) PostMessageW(window, WM_COMMAND, 107, 0);
-            } else if (e->kind == L"launched") { if (a->diagnostic) { a->screenshot(L"launched.bmp"); DestroyWindow(window); } else SetWindowTextW(a->status, L"Minecraft Launcher запущен."); }
-            else if (e->kind == L"failure") { a->exitCode = 1; a->technical = e->fields.count(L"detail") ? json::text(e->fields, L"detail") : e->fields.count(L"error") ? json::text(e->fields, L"error") : L""; a->finish(e->message, false); a->screenshot(L"failure.bmp"); if (a->diagnostic) DestroyWindow(window); }
-            else if (e->kind == L"ended" && a->running) { a->exitCode = 1; a->finish(e->message, false); a->screenshot(L"failure.bmp"); if (a->diagnostic) DestroyWindow(window); }
+            } else if (e->kind == L"launched") {
+#ifdef INSTALLER_DIAGNOSTIC
+                if (a->diagnostic) {
+                    std::string evidence = json::utf8(L"{\"schemaVersion\":1,\"launchId\":" + json::quote(json::text(e->fields, L"launchId")) + L",\"pid\":" + std::to_wstring(json::integer(e->fields, L"pid")) + L",\"startUtcTicks\":" + std::to_wstring(json::integer(e->fields, L"startUtcTicks")) + L"}");
+                    handle output(CreateFileW((a->diagnosticImages + L"\\launched.json").c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_FLAG_OPEN_REPARSE_POINT, nullptr)); check(output.valid());
+                    DWORD written = 0; check(WriteFile(output.h, evidence.data(), static_cast<DWORD>(evidence.size()), &written, nullptr)); check(written == evidence.size()); check(FlushFileBuffers(output.h));
+                    a->screenshot(L"launched.bmp"); a->requestClose();
+                } else
+#endif
+                    SetWindowTextW(a->status, L"Minecraft Launcher запущен.");
+            }
+            else if (e->kind == L"failure") { a->technical = e->fields.count(L"detail") ? json::text(e->fields, L"detail") : e->fields.count(L"error") ? json::text(e->fields, L"error") : L""; a->finish(e->message, false); a->screenshot(L"failure.bmp"); if (a->diagnostic) a->requestClose(); }
+            else if (e->kind == L"ended" && a->running) { a->finish(e->message, false); a->screenshot(L"failure.bmp"); if (a->diagnostic) a->requestClose(); }
             return 0;
         }
         case WM_CLOSE:
             if (a->running) { if (!a->stop.exchange(true)) a->send(L"cancel", 4); SetWindowTextW(a->status, L"Отмена установки… Ожидаем безопасного завершения помощника."); EnableWindow(a->cancel, FALSE); return 0; }
-            { std::lock_guard<std::mutex> lock(a->pipeLock); a->input.close(); } DestroyWindow(window); return 0;
+            if (!a->closing) a->requestClose(); return 0;
         case WM_DESTROY: PostQuitMessage(0); return 0;
         }
     } catch (const std::exception& e) { a->finish(L"Ошибка установщика. Данные сохранены.\r\n" + json::wide(e.what()), false); }
@@ -306,10 +347,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
 #ifdef INSTALLER_DIAGNOSTIC
         a.localData = parentPath(executable()) + L"\\diagnostic-profile";
         int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
-        if (count == 4 && wcscmp(arguments[1], L"--smoke") == 0) { a.diagnostic = true; a.base = normalize(arguments[2]); a.diagnosticImages = normalize(arguments[3]); makeDirectory(a.diagnosticImages); }
+        a.launchId = guid();
+        if (count == 5 && wcscmp(arguments[1], L"--smoke") == 0) {
+            a.diagnostic = true; a.base = normalize(arguments[2]); a.diagnosticImages = normalize(arguments[3]); a.launchId = arguments[4];
+            if (a.launchId.size() != 32 || a.launchId.find_first_not_of(L"0123456789abcdef") != std::wstring::npos) throw std::runtime_error("invalid diagnostic launch id"); makeDirectory(a.diagnosticImages);
+        }
         else if (count != 1) throw std::runtime_error("invalid diagnostic invocation"); LocalFree(arguments);
 #endif
-        a.game = discoverGame(a.localData); bundle payload; a.payloadBytes = payload.bytes;
+        a.game = discoverGame(a.localData); a.payload = std::make_unique<bundle>(); a.payloadBytes = a.payload->bytes;
         INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_PROGRESS_CLASS}; InitCommonControlsEx(&controls);
         WNDCLASSW cls{}; cls.hInstance = instance; cls.lpszClassName = L"MinecraftLauncherBootstrapper"; cls.lpfnWndProc = procedure; cls.hCursor = LoadCursorW(nullptr, IDC_ARROW); cls.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         check(RegisterClassW(&cls) != 0); check(CreateWindowExW(WS_EX_CONTROLPARENT, cls.lpszClassName, L"Установка Minecraft Launcher", WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX), CW_USEDEFAULT, CW_USEDEFAULT, 740, 520, nullptr, nullptr, instance, &a) != nullptr);
@@ -320,7 +365,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
             monitor.rcWork.top + (monitor.rcWork.bottom - monitor.rcWork.top - height) / 2, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
         ShowWindow(a.window, show); UpdateWindow(a.window); SetFocus(a.folder);
         MSG message{}; while (GetMessageW(&message, nullptr, 0, 0) > 0) if (!IsDialogMessageW(a.window, &message)) { TranslateMessage(&message); DispatchMessageW(&message); }
-        result = a.exitCode;
+        result = a.outcome.code;
     } catch (const std::exception& e) {
 #ifdef INSTALLER_DIAGNOSTIC
         std::ofstream diagnostic(std::filesystem::path(parentPath(executable())) / L"startup-error.log", std::ios::app); diagnostic << e.what() << '\n';

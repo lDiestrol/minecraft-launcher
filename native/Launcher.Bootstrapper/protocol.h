@@ -5,7 +5,7 @@
 
 // Success is a typed coordinator result, never a progress stage or an exit code.
 class responseContract {
-    std::wstring nonce, sid, expectedApp, expectedGame;
+    std::wstring nonce, sid, expectedApp, expectedGame, launchId;
     unsigned long long active = 1; int lastStage = -1; bool completed = false, terminal = false;
     static void keys(const json::object& fields, std::initializer_list<const wchar_t*> extra) {
         for (const auto& field : fields) {
@@ -16,7 +16,7 @@ class responseContract {
         if (fields.size() != 5 + extra.size()) throw std::runtime_error("missing response field");
     }
 public:
-    responseContract(std::wstring token, std::wstring user, std::wstring app) : nonce(std::move(token)), sid(std::move(user)), expectedApp(std::move(app)) {}
+    responseContract(std::wstring token, std::wstring user, std::wstring app, std::wstring diagnosticLaunch = {}) : nonce(std::move(token)), sid(std::move(user)), expectedApp(std::move(app)), launchId(std::move(diagnosticLaunch)) {}
     bool isComplete() const { return completed; }
     unsigned long long requestId() const { return active; }
     std::wstring accept(const json::object& fields) {
@@ -41,7 +41,15 @@ public:
             if (lastStage != 4 || _wcsicmp(json::text(fields, L"app").c_str(), expectedApp.c_str()) ||
                 _wcsicmp(json::text(fields, L"game").c_str(), expectedGame.c_str())) throw std::runtime_error("unverified completion paths or stages");
             completed = true; active = 5;
-        } else if (type == L"launched" && active == 5 && completed) { keys(fields, {}); terminal = true; }
+        } else if (type == L"launched" && active == 5 && completed) {
+#ifdef INSTALLER_DIAGNOSTIC
+            keys(fields, {L"launchId", L"pid", L"startUtcTicks"});
+            if (launchId.empty() || json::text(fields, L"launchId") != launchId || !json::integer(fields, L"pid") || !json::integer(fields, L"startUtcTicks")) throw std::runtime_error("invalid diagnostic launch identity");
+#else
+            keys(fields, {});
+#endif
+            terminal = true;
+        }
         else throw std::runtime_error("unexpected helper state transition");
         return type;
     }

@@ -23,14 +23,22 @@ internal static class Program
         Task operation = Task.CompletedTask;
         try
         {
-            if (args.Length != 4 || !Guid.TryParseExact(args[0], "N", out _) ||
+#if INSTALLER_DIAGNOSTIC
+            const int argumentCount = 5;
+#else
+            const int argumentCount = 4;
+#endif
+            if (args.Length != argumentCount || !Guid.TryParseExact(args[0], "N", out _) ||
                 !int.TryParse(args[1], out int parentId) || !long.TryParse(args[2], out long parentStart))
                 throw new InvalidDataException("Помощник должен запускаться графическим установщиком.");
             nonce = args[0]; sid = args[3];
             using Process parent = Process.GetProcessById(parentId);
             ValidateIdentity(parent, parentStart, sid);
+            InheritedPayloadPins.RevokeFurtherInheritance(Environment.GetEnvironmentVariable(InheritedPayloadPins.EnvironmentKey));
+            Environment.SetEnvironmentVariable(InheritedPayloadPins.EnvironmentKey, null);
             string payloadDirectory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".."));
 #if INSTALLER_DIAGNOSTIC
+            if (!Guid.TryParseExact(args[4], "N", out _)) throw new InvalidDataException("Неверный идентификатор диагностического запуска.");
             InstallationProduct product = InstallationProduct.Diagnostic;
             string localData = Path.Combine(Path.GetDirectoryName(parent.MainModule!.FileName)!, "diagnostic-profile");
 #else
@@ -75,12 +83,20 @@ internal static class Program
                         pinnedExecutable = SafeLeafFile.OpenRead(executable);
                     }
                     // Release the exclusive lease BEFORE Launcher enters its startup guard.
+                    ProcessStartInfo start = new(executable) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(executable)! };
+#if INSTALLER_DIAGNOSTIC
+                    start.ArgumentList.Add("--bootstrapper-launch-id");
+                    start.ArgumentList.Add(args[4]);
+#endif
                     using (pinnedExecutable)
-                    using (Process? launched = Process.Start(new ProcessStartInfo(executable)
-                    { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(executable)! }))
+                    using (Process? launched = Process.Start(start))
                     {
                         if (launched is null) throw new IOException("Не удалось запустить установленное приложение.");
+#if INSTALLER_DIAGNOSTIC
+                        Write(command.Id, "launched", ("launchId", args[4]), ("pid", launched.Id), ("startUtcTicks", launched.StartTime.ToUniversalTime().Ticks));
+#else
                         Write(command.Id, "launched");
+#endif
                     }
                 }
                 else

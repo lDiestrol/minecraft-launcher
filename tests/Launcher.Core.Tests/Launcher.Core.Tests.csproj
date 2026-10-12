@@ -22,6 +22,8 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <Compile Include="..\..\tools\Launcher.InstallerDiagnosticHost\DiagnosticLaunchMarker.cs" Link="DiagnosticLaunchMarker.cs" />
+    <Compile Include="..\..\src\Launcher.InstallHelper\InheritedPayloadPins.cs" Link="InheritedPayloadPins.cs" />
   </ItemGroup>
   <Target Name="CopyGuardianTestHost" AfterTargets="Build">
     <ItemGroup>

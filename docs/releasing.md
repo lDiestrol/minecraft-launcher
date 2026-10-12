@@ -33,7 +33,9 @@ Win32 x64 GUI (RU, UTF-16, asInvoker, PerMonitorV2, keyboard navigation). `/MT`
 Проверка bundled index читает метаданные без извлечения runtime. После выбора GUI
 извлекает файлы с `CreateNew` в `<Base>\.launcher-install\bootstrap-<GUID>` с private
 ACL пользователя/SYSTEM, проверкой reparse/containment и SHA-256 каждого файла.
-`TEMP/TMP` **только дочернего helper** указывают туда же; global environment не меняется.
+`TEMP/TMP` в environment дочернего helper указывают туда же; global environment не
+меняется. Дочерние процессы могут наследовать эти значения, это не запрет всех
+vendor/OS writes вне staging.
 Managed helper публикуется self-contained win-x64, non-single-file. Installation
 Coordinator остаётся единственным владельцем preflight/lease/recovery/Setup/verification.
 
@@ -63,12 +65,50 @@ Resource Compiler file/product version10.0.26100.7705. Installer exit0,
 PerMonitorV2 manifest, exit0. Native product собирается `/W4 /WX`, зависимости только
 системные DLL, без MSVC runtime DLL. Source version `.NET10.0.401` не обновлялась.
 
-Новый собственный прогон: restore/build0 errors/warnings; xUnit466/466 (447 Core,
+Исторический прогон до review fixes: restore/build0 errors/warnings; xUnit466/466 (447 Core,
 19 WPF), включая25 новых случаев; отдельный Installation/StorageRoot crash filter10/10;
 native48 checks — strict JSON/context/stage transitions, Unicode, path rejection,
 payload integrity, CreateNew/retry, отмена до и во время extraction, повреждённые index/payload.
 Format verify, release-feed tests и изолированный полный packaging успешны.
 Packaging сообщает только ожидаемые unsigned warnings; это не compiler warnings.
+
+### Review fixes NB-001…NB-005, 12.10.2026
+
+Изменения в той же ветке / [Draft PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14),
+без изменения Launcher, guardian, StorageRootResolver, Coordinator и SDK161.
+
+- Staging требует persistent ACL; FAT/exFAT не поддерживаются, fallback отсутствует.
+  Проверяются реальные DACL/owner и весь родительский namespace, protected payload ACL,
+  no-reparse identity, directory pins без delete-sharing, повторная hash/ACL проверка.
+  Payload/dependency и namespace pins передаются helper через explicit HANDLE_LIST
+  и удерживаются до его выхода; helper запрещает дальнейшее наследование pins.
+  Существующие ACL не меняются. Небезопасный общий namespace отвергается, даже на NTFS.
+  Исходный bundle удерживается одним read handle на весь GUI lifetime, retry не
+  переоткрывает EXE по имени.
+- Close после success/error останавливает reader отдельным shutdown; UI не ждёт
+  длительный join. Helper wait ограничен 1s; 5s watchdog может завершить только GUI,
+  не installer tree/Minecraft. Intent/locator сохраняются, EOF означает прежний cancel.
+  Зависший helper может остаться и блокировать retry до достоверного recovery.
+  First Close/Escape во время установки по-прежнему отменяет операцию безопасно.
+- Retry получает exit1 до подтверждения; final typed success устанавливает exit0.
+  Component test проверяет error → retry/error → retry/success → WM_CLOSE.
+- Footer адаптируется к client area, paths/errors прокручиваются, min tracking и
+  DPI-change ограничены рабочей областью. Расчёты проверены для100/125/150/200%,
+  1366×768 с taskbar и для отрицательных координат второго монитора.
+- Diagnostic-only GUID/PID/start UTC ticks связывают process creation evidence и
+  `launch-<GUID>.marker.json` schema1 после Main. Уникальный immutable marker не
+  заменяет старый файл и не конфликтует с его reader; create acknowledgment не
+  является Main confirmation. Harness ждёт matching marker30s без удаления intent.
+
+Свежие результаты: xUnit486/486 (467 Core +19 WPF), **20 новых случаев**:14 marker,
+6 pin handoff/validation. Отдельный crash/recovery10/10. Native production177 checks,
+diagnostic179 checks (129 общих новых +2 diagnostic identity), плюс отдельный настоящий
+Win32 lifecycle component с hung child/WM_CLOSE/intent sentinel. Обе flavours и
+component targets собираются `/W4 /WX /MT`. Restore/build0 errors/warnings,
+format/diff-check/local links чистые; production и diagnostic packaging изолированы.
+Это не GUI→Setup/реальный Launcher E2E. Проверка filesystem flags без ACL — модель,
+ACL/rename/symlink/recheck/read-pin inheritance/canary — настоящие Win32 API.
+Полная межпользовательская атака и реальный FAT/exFAT остаются VM gates.
 
 ### Windows E2E — не завершён
 
@@ -95,6 +135,9 @@ diagnostic registration и создаёт уникальные lab paths на в
 sentinel GameData/locator, opt-in uninstall/reinstall и screenshots. Script проверен
 синтаксически, **его E2E assertions в этой среде не выполнены**. Не использовать
 production outer EXE в этом harness. Пользователю обычного installer команды не нужны.
+Каждый clean/retry/reinstall использует новый GUID и exact PID/start ticks marker;
+старый `launch.marker` не подтверждает запуск. Отдельно проверяется медленный Main
+диагностического host, но не вместо полного installed GUI E2E.
 
 ```powershell
 ./scripts/package-diagnostic-bootstrapper.ps1
@@ -123,12 +166,16 @@ download. Проверять actual SDK locator/download paths и отсутст
 при denied packages, недоступном D:, нехватке места, concurrent update/install/game.
 До этих fault/E2E проверок и полного Win10/11 Launcher update smoke release запрещён.
 
-Список обязательных обычных Windows10/11 E2E: C/D и Cyrillic/spaces; DPI100/150/200
+Список обязательных обычных Windows10/11 E2E: C/D и Cyrillic/spaces; DPI100/125/150/200
 и keyboard/folder dialog; clean + managed retry без второго Setup; legacy/unmanaged
 App refusal без миграции; configured root на другом диске/недоступный том; real Launcher
 shortcuts/HKCU/Update hash; отмена во время extraction/Setup; helper/native crash +
 pending intent recovery; uninstall/reinstall с world/locator hashes; Server/Singleplayer,
 guardian и Minecraft после закрытия Launcher; disk-full/ACL/detach в disposable VM.
+Дополнительно: real FAT/exFAT rejection до extraction; cross-user ACL/parent substitution;
+visual 1366×768/150–200% с taskbar, Tab/Enter/Escape и перенос между мониторами;
+GUI/helper hung/driver fault с watchdog, без потери pending state; свежие markers
+clean/retry/reinstall с искусственно медленным Main. EnableLUA=0 не обходить.
 
 ## Историческое контролируемое обновление SDK/vpk 1.2.161, 11.10.2026
 

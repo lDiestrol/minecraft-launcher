@@ -66,15 +66,36 @@ foreach ($volume in $Volumes) {
     $control = Join-Path $case 'diagnostic-profile\MinecraftLauncherControl'
     function Invoke-Gui([string]$label) {
         $images = Join-Path $case $label
-        $process = Start-Process -FilePath $exe -ArgumentList "--smoke `"$base`" `"$images`"" -WindowStyle Normal -PassThru
+        $launchId = [guid]::NewGuid().ToString('N')
+        $process = Start-Process -FilePath $exe -ArgumentList "--smoke `"$base`" `"$images`" $launchId" -WindowStyle Normal -PassThru
         if (!$process.WaitForExit(180000)) { throw 'Diagnostic GUI did not finish; retain artifacts, do not remove an intent.' }
         if ($process.ExitCode -ne 0 -or !(Test-Path -LiteralPath (Join-Path $images 'success.bmp'))) { throw 'GUI reported failure; inspect screenshots and helper.log.' }
         $installed = Get-ItemProperty -LiteralPath $registration
         if ($installed.InstallLocation.TrimEnd('\') -ne $app) { throw 'Unexpected diagnostic registry App path.' }
         $locator = Get-Content -LiteralPath (Join-Path $control 'storage-root.json') -Raw | ConvertFrom-Json
         if ($locator.gameDataRoot -ne $game) { throw 'Unexpected GameData locator.' }
-        if (!(Test-Path -LiteralPath (Join-Path $control 'installation-completion\installation-intent.json')) -or
-            !(Test-Path -LiteralPath (Join-Path $app 'current\launch.marker'))) { throw 'Completion or installed-app launch was not proved.' }
+        if (!(Test-Path -LiteralPath (Join-Path $control 'installation-completion\installation-intent.json'))) { throw 'Completion was not proved.' }
+        # launched is creation evidence only. Require Main's fresh, atomic marker for this exact process.
+        $created = Get-Content -LiteralPath (Join-Path $images 'launched.json') -Raw | ConvertFrom-Json
+        if ($created.schemaVersion -ne 1 -or $created.launchId -cne $launchId -or $created.pid -le 0 -or $created.startUtcTicks -le 0) { throw 'Invalid process-creation evidence.' }
+        $confirmed = $false; $watch = [System.Diagnostics.Stopwatch]::StartNew()
+        $marker = Join-Path $app "current\launch-$launchId.marker.json"
+        while ($watch.Elapsed.TotalSeconds -lt 30) {
+            if (Test-Path -LiteralPath $marker) {
+                try {
+                    # Immutable per-launch file: never replace a marker from a previous invocation.
+                    $stream = [System.IO.File]::Open($marker, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read,
+                        [System.IO.FileShare]::Read -bor [System.IO.FileShare]::Delete)
+                    $reader = [System.IO.StreamReader]::new($stream)
+                    try { $actual = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose(); $stream.Dispose() }
+                    $confirmed = $actual.schemaVersion -eq 1 -and $actual.launchId -ceq $launchId -and
+                        $actual.pid -eq $created.pid -and $actual.startUtcTicks -eq $created.startUtcTicks
+                } catch { $confirmed = $false }
+                if ($confirmed) { break }
+            }
+            Start-Sleep -Milliseconds 50
+        }
+        if (!$confirmed) { throw 'Expected diagnostic Main marker did not arrive; retain all state and pending intents.' }
         $update = Join-Path $app 'Update.exe'
         if ((Get-FileHash -LiteralPath $update).Hash -ne $catalog.updateSha256) { throw 'Actual Update.exe differs from the pinned vendor output.' }
     }

@@ -58,6 +58,8 @@ jobs:
           ./scripts/build-native-bootstrapper.ps1 -Tests
           & ./artifacts/bootstrapper/native-production/native-tests.exe 'artifacts/releases/${{ inputs.channel }}/lDiestrol.MinecraftLauncher-${{ inputs.channel }}-Setup.exe' "$PWD/artifacts/bootstrapper/ci-native-tests"
           if ($LASTEXITCODE -ne 0) { throw 'Native bootstrapper checks failed.' }
+          & ./artifacts/bootstrapper/native-production/native-lifecycle-tests.exe "$PWD/artifacts/bootstrapper/native-production/native-tests.exe" "$PWD/artifacts/bootstrapper/ci-gui-lifecycle"
+          if ($LASTEXITCODE -ne 0) { throw 'Native GUI lifecycle component checks failed.' }
 
       - name: Verify SHA-256 manifest
         shell: pwsh

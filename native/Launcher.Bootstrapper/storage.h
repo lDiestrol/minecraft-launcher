@@ -20,6 +20,15 @@ struct handle {
     void close() { if (h != INVALID_HANDLE_VALUE && h != nullptr) CloseHandle(h); h = INVALID_HANDLE_VALUE; }
     bool valid() const { return h != INVALID_HANDLE_VALUE && h != nullptr; }
 };
+struct inheritedPins {
+    std::vector<handle> owned; std::vector<HANDLE> values;
+    explicit inheritedPins(const std::vector<HANDLE>& source) {
+        for (HANDLE original : source) {
+            HANDLE copy = nullptr; check(DuplicateHandle(GetCurrentProcess(), original, GetCurrentProcess(), &copy, 0, TRUE, DUPLICATE_SAME_ACCESS));
+            owned.emplace_back(copy); values.push_back(copy);
+        }
+    }
+};
 inline std::wstring known(REFKNOWNFOLDERID id) { PWSTR p = nullptr; if (FAILED(SHGetKnownFolderPath(id, 0, nullptr, &p))) throw std::runtime_error("known folder unavailable"); std::wstring r(p); CoTaskMemFree(p); return r; }
 inline std::wstring executable() { wchar_t p[32768]{}; DWORD n = GetModuleFileNameW(nullptr, p, 32768); check(n && n < 32768); return p; }
 inline std::wstring parentPath(const std::wstring& p) { return std::filesystem::path(p).parent_path().wstring(); }
@@ -142,5 +151,18 @@ public:
             }
             check(FlushFileBuffers(output.h)); if (digest.finish() != entry.hash) throw std::runtime_error("corrupt extracted payload");
         }
+    }
+    std::vector<handle> pinExtracted(const std::wstring& root) const {
+        // No write/delete sharing. Read-only duplicates can be handed to the helper through HANDLE_LIST.
+        std::vector<handle> pinned; std::array<BYTE, 65536> buffer{};
+        for (const auto& entry : entries) {
+            std::wstring relative = entry.path; for (auto& c : relative) if (c == L'/') c = L'\\';
+            auto fileHandle = readFile(root + L"\\" + relative); if (length(fileHandle.h) != entry.size) throw std::runtime_error("payload size changed");
+            sha256 digest; unsigned long long left = entry.size;
+            while (left) { DWORD n = static_cast<DWORD>((std::min)(left, static_cast<unsigned long long>(buffer.size()))); readExact(fileHandle.h, buffer.data(), n); digest.add(buffer.data(), n); left -= n; }
+            if (digest.finish() != entry.hash) throw std::runtime_error("payload changed before helper launch");
+            pinned.push_back(std::move(fileHandle));
+        }
+        return pinned;
     }
 };

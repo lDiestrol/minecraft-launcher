@@ -162,9 +162,9 @@ Log handle append-only; невозможность безопасной запи
 
 ## Installation Coordinator (API v1)
 
-`InstallationCoordinator` в Infrastructure предоставляет managed API для будущего
-native Win32 GUI через отдельный managed helper. GUI, IPC transport и helper packaging
-ещё не реализованы. `IInstallationBackend` отделяет порядок операций от Windows/FS.
+`InstallationCoordinator` в Infrastructure предоставляет managed API для native
+Win32 GUI через реализованный отдельный self-contained managed helper и NDJSON IPC.
+Packaging GUI/helper описан ниже. `IInstallationBackend` отделяет порядок операций от Windows/FS.
 Основные операции: `Inspect()`, `SuggestBaseDirectory(volumeRoot)`, `Preflight(request)`
 и `InstallAsync(request, progress, cancellationToken)`. Preflight возвращает фактические
 App/GameData/staging paths и RequiredBytes; выполняет короткие CreateNew/DeleteOnClose
@@ -251,8 +251,31 @@ PerMonitorV2. Не использует WPF/.NET/WebView до выбора ка�
 извлечение только в private уникальный staging выбранного тома. Native проверки
 ограничивают **extraction**, не заменяют решения Installation Coordinator.
 
+До создания staging требуется `FILE_PERSISTENT_ACLS` выбранного локального тома;
+FAT/exFAT отвергаются без fallback. `secureNamespace` проверяет owner/DACL каждого
+существующего родителя от корня тома и фактический opened handle. Неизвестные ACE,
+null DACL и права посторонних на запись/подмену namespace — fail-closed. Текущий SID,
+SYSTEM, Administrators и TrustedInstaller являются доверенными Windows authorities;
+payload root требует protected DACL только текущего SID/SYSTEM. Существующие ACL
+не исправляются автоматически, небезопасный выбранный каталог может быть отвергнут.
+Разрешается только создание посторонних siblings без права подмены существующих.
+Directory handles с `FILE_LIST_DIRECTORY` и без delete-sharing удерживают identity;
+metadata-only handles недостаточны. После extraction повторяются hash/size checks,
+все payload files удерживаются read-only handles без write/delete-sharing и namespace
+повторно проверяется перед `CreateProcessW`.
+Worker/retry используют исходный pinned bundle handle, а не повторно открывают
+путь внешнего EXE, который мог измениться после выбора каталога.
+
 `Launcher.InstallHelper` — self-contained non-single-file .NET helper, запускаемый
-native GUI с explicit HANDLE_LIST для stdin/stdout/stderr. Stdout — исключительно
+native GUI с explicit HANDLE_LIST для stdin/stdout/stderr и read-only namespace/payload
+pins. Их OS-копии удерживаются helper до выхода, даже после crash/shutdown GUI.
+Trusted creation environment передаёт номера pins; helper проверяет их и снимает
+`HANDLE_FLAG_INHERIT` до catalog/Setup/launch, затем удаляет служебную переменную
+из своего environment. Pins не передаются далее в Launcher/Minecraft; недостоверная
+передача не допускает запуска Setup. Это не IPC/server-controlled executable option.
+Учтён Windows inheritance flag обычного `Process.Start`:
+[первичный исходник .NET10](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Diagnostics.Process/src/System/Diagnostics/Process.Windows.cs#L536).
+Stdout — исключительно
 bounded UTF8 NDJSON (32768 bytes), stderr — `helper.log` в staging. Неполная строка,
 invalid UTF8/schema/unknown/duplicate fields, nonce/SID/requestId mismatch и
 неожиданная response transition не дают успеха. Каждая команда несёт `v=1`, positive
@@ -266,6 +289,17 @@ stages, но progress `Completed` **не** активирует успешный
 typed success с ожидаемыми App/GameData. Exit0/EOF/deadline не заменяют verification.
 Startup/preflight response deadline60s, install inactivity16min; эти UI deadlines
 закрывают IPC/cancel и **не** разрешают очистку intent/rollback или смену Storage Root.
+
+Shutdown отделён от cancel: после успеха/ошибки закрытие сигнализирует reader, не
+делает длительный join в UI. GUI остаётся жив до окончания worker; helper wait — 1s.
+При зависшем driver/I/O через 5s watchdog завершает **только native GUI** вместе с его
+потоками; нет detach, уничтожения app при живом worker, kill Setup/Minecraft или
+удаления intent. EOF сохраняет прежний helper cancellation/recovery contract.
+При активной установке первое Close/Escape остаётся cancel с ожиданием безопасного
+результата. Retry ожидает завершения старого worker асинхронно. Exit code равен 1
+до подтверждения попытки; только typed success последней попытки возвращает 0.
+Buttons закреплены снизу client area, при узком окне расположены вертикально;
+paths/status прокручиваются, MinTrackSize/WM_DPICHANGED ограничены monitor work area.
 
 Helper проверяет ordinary non-impersonated SID, parent PID/start ticks/session/token
 при startup и командах, использует Environment LocalAppData этого пользователя.
@@ -283,5 +317,11 @@ installation intent/Job recovery. Installer Job/Game Job и StorageRootResolver 
 являются транзакционным filesystem snapshot. Неизвестное состояние fail closed.
 
 Diagnostic helper выбирает отдельный product/LocalData compile-time, без runtime
-production override. Tests/native console/diagnostic vendor host не входят в
+production override. Каждый диагностический запуск имеет fresh GUID; только compiled
+diagnostic helper передаёт его VendorProbe и возвращает PID/start UTC ticks.
+Process creation не доказывает Main: host атомарно публикует immutable
+`launch-<GUID>.marker.json` с schema1/GUID/PID/start ticks после Main. Старые файлы
+не заменяются и не принимаются за новый запуск; harness ждёт exact match до 30s,
+timeout не разрешает cleanup intent. Production Launcher не получает diagnostic args.
+Tests/native console/diagnostic vendor host не входят в
 production bundle. Реальные E2E и release gates: [releasing.md](releasing.md).

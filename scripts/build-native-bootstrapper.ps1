@@ -28,7 +28,9 @@ exit /b 0
 "@
 if ($Tests) {
     $commands = $commands.Replace('exit /b 0', @"
-cl /nologo /std:c++17 /EHsc /W4 /WX /O2 /MT /utf-8 /Fo"$output\tests.obj" tests.cpp user32.lib shell32.lib ole32.lib uuid.lib advapi32.lib bcrypt.lib /link /SUBSYSTEM:CONSOLE /MACHINE:X64 /OUT:"$output\native-tests.exe"
+cl /nologo /std:c++17 /EHsc /W4 /WX /O2 /MT /utf-8 $define /Fo"$output\tests.obj" tests.cpp user32.lib shell32.lib ole32.lib uuid.lib advapi32.lib bcrypt.lib /link /SUBSYSTEM:CONSOLE /MACHINE:X64 /OUT:"$output\native-tests.exe"
+if errorlevel 1 exit /b 1
+cl /nologo /std:c++17 /EHsc /W4 /WX /O2 /MT /utf-8 /Fo"$output\lifecycle-tests.obj" lifecycle-tests.cpp user32.lib gdi32.lib shell32.lib ole32.lib uuid.lib advapi32.lib bcrypt.lib comctl32.lib /link /SUBSYSTEM:CONSOLE /MACHINE:X64 /OUT:"$output\native-lifecycle-tests.exe"
 if errorlevel 1 exit /b 1
 exit /b 0
 "@)

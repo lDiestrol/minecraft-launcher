@@ -1,5 +1,21 @@
 # Единый журнал Minecraft Launcher
 
+> Review fixes PR #14, 12.10.2026 (UTC+05:00), та же `feat/v061-gui-bootstrapper`.
+> NB-001…NB-005 исправлены без изменений игрового Launcher/Coordinator/guardian,
+> StorageRootResolver и SDK161. Persistent ACL + проверенный pinned namespace,
+> helper-owned read pins без дальнейшего наследования; отдельный shutdown и bounded
+> GUI lifetime; результат последней подтверждённой попытки; адаптивный DPI layout;
+> diagnostic-only immutable GUID/PID/start marker после Main, не Process.Start ack.
+> Новый полный xUnit486/486 (20 новых), build0 errors/warnings, crash/recovery10/10;
+> native177 production/179 diagnostic checks + Win32 GUI lifecycle component,
+> format/diff/local links и изолированный production/diagnostic packaging чистые.
+> Подробности и границы доказательств — [releasing.md](releasing.md).
+> Публикация исправлений в существующий [Draft PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14)
+> согласована; HEAD определяется Git/GitHub, не собственным SHA в этом журнале.
+> Merge не выполняется, release-ready не объявляется. FAT/exFAT/cross-user/visual
+> ordinary-session GUI→Setup E2E ещё обязательны; EnableLUA=0 не обходился.
+> Ниже — исторические результаты первоначального PR и предыдущих этапов.
+
 > Новый этап, 12.10.2026 (UTC+05:00): PR #13 merged, verified origin/feat/v0.6.1
 > `9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`. От этой основы создана
 > `feat/v061-gui-bootstrapper`; main/release/v0.6.0 не изменяются.
@@ -523,6 +539,32 @@ code signing и срок; частые реальные диагностичес
 Необходимость ADR и машинной release checklist — предложения, не scope v0.6.1.
 
 ## 11. Журнал работ
+
+12.10.2026: по независимому review PR #14 устранены NB-001(P1), NB-002…NB-005(P2)
+и устаревшее описание GUI/IPC/helper в architecture. Проверяется реальный owner/DACL
+каждого родителя, volume persistent ACL, protected private root и no-reparse handles;
+directory pin содержит FILE_LIST_DIRECTORY (metadata-only не запрещал rename —
+это воспроизведено и исправлено). Payload/dependency hashes проверяются повторно,
+read pins переданы helper; перед Setup/launch он снимает дальнейшую inheritable flag.
+Неподходящий том/ACL отвергается без extraction/helper и fallback; чужие ACL не меняются.
+Shutdown reader отделён от cancel, helper wait1s и native-only watchdog5s; ни Setup,
+ни Minecraft не убиваются GUI, intent/locator не очищаются. Worker завершается до
+уничтожения app; retry/queued completion не вызывает длительный join или stale exit.
+Layout100/125/150/200%, footer/work-area/scrollable paths/errors проверены расчётами.
+Diagnostic Main публикует отдельный immutable `launch-<GUID>.marker.json` schema1
+с PID/start UTC ticks; harness сопоставляет с trusted creation evidence до30s.
+Обнаруженная гонка замены общего marker при открытом reader исключена отказом от
+общего заменяемого файла. Старые confirmations/unknown schema/PID/time не дают успех.
+Новые20 xUnit cases:14 marker +6 pin metadata/lifetime. Full486/486; native177/179
+и настоящий Win32 component WM_CLOSE с hung child, сохранением intent sentinel,
+release of parent pins/canary isolation и crash/recovery10/10. Component не запускает
+установку и не является обходом identity checks или GUI→Setup E2E.
+Изолированный diagnostic host с медленным Main и fresh repeat проверен отдельно;
+полный clean/retry/reinstall в обычном Windows-пользователе ещё не выполнен.
+FAT/exFAT rejection моделировался flags; ACL/rename/symlink/recheck/inheritance —
+реальные Win32 API. Cross-user/visual/high-DPI/full installed update остаются gates.
+SDK/версии/каналы/main/release/production/GameData/backup/VHDX не изменялись.
+Согласован отдельный fix commit и обычный push в тот же Draft PR, без merge.
 
 12.10.2026: native toolchain подготовлен по разрешению владельца из официального
 Microsoft installer: Build Tools2022 17.14.41, MSVC19.44.35229, linker14.44.35229,
