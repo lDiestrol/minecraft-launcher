@@ -1,5 +1,33 @@
 # Единый журнал Minecraft Launcher
 
+> Исправление verification PR #14, 14.10.2026 (UTC+05:00), Debian 13 x64.
+> Проверены GitHub/Open PR и исходный HEAD `d1d4dfdfe42806c40d2113d77e8f45eabcbda9aa`;
+> base `feat/v0.6.1` — `9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`, main — `bd98ecd`.
+> Работа изолирована в `/home/dev/projects/minecraft-launcher-pr14` на существующей
+> `feat/v061-gui-bootstrapper`; main/release/integration working files не изменяются.
+> По сообщению владельца, Windows10 GUI E2E успешно выполнил Setup161, но backend
+> отверг результат: `lib/app/Squirrel.exe` ошибочно искался в `App/current`.
+> Теперь точное сопоставление с `App/Update.exe` выполняется до общего `lib/app/`;
+> вложенный `tools/Squirrel.exe` остаётся обычным current-файлом. Размер/SHA-256,
+> trusted updater hash, reparse/containment, manifest/package/root, HKCU и все
+> exit/process/intent/receipt/completion условия сохранены.
+> Добавлены 27 синтетических regression cases; существующий Sandbox теперь содержит
+> пакетный Squirrel.exe. CI pull_request минимально расширен для base `feat/v0.6.1`.
+> Установлены официальный SDK 10.0.402 и локальный Debian ICU76 76.1-4 без sudo;
+> targeting/runtime/NuGet packs восстановлены обычным restore. Debian restore и full
+> cross-build (0 warnings/errors), portable xUnit156/156, full format verify и diff
+> прошли. Для format настроен CRLF только в PR worktree, массового tracked diff нет.
+> Новые Windows filesystem tests на Debian: 27 failed на Windows-only path guard;
+> App testhost aborted без WindowsDesktop runtime. Это ограничения ОС, не успешные
+> Windows-проверки. Независимый review в отдельном контексте: замечаний нет.
+> Владелец разрешил один fix commit и обычный push в существующий
+> [PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14), без merge/release.
+> Актуальные HEAD и результаты Windows CI — Git/GitHub и
+> [Actions](https://github.com/lDiestrol/minecraft-launcher/actions/workflows/ci.yml);
+> Linux cross-build не заменяет Windows test. Setup/GUI E2E, packaging, tags и release
+> в этой сессии не запускались. Повторный реальный Windows GUI E2E согласуется отдельно.
+> Следующие блоки — исторические снимки 12.10.2026 и более ранних этапов.
+
 > Lifecycle final fixes PR #14, 12.10.2026 (UTC+05:00), `feat/v061-gui-bootstrapper`.
 > NB-006/P2: UI не пишет stdin и не ждёт pipe mutex при Close/Cancel/Launch.
 > Единственный worker сериализует команды; Launch — одноразовый atomic signal,

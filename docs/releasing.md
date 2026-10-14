@@ -22,6 +22,23 @@
 
 ## Native GUI Bootstrapper: PR #14, 12.10.2026
 
+### Исправление проверки установленного updater, 14.10.2026
+
+Владелец сообщил о Windows10 GUI E2E: Setup161 завершил установку, но verification
+ошибочно ожидал `App/current/Squirrel.exe`. В фактическом full package entry
+`lib/app/Squirrel.exe` и установленном `App/Update.exe` SHA-256 совпал; остальные
+192 файла `lib/app` также прошли проверку по данным владельца. Это внешнее наблюдение,
+на Debian оно не повторялось. Backend теперь обрабатывает этот точный entry раньше
+общего `lib/app/` → `App/current/`; другие файлы, включая вложенный Squirrel.exe,
+сохраняют обычное сопоставление. Размер и SHA-256 сверяются с package entry, затем
+отдельно проверяется trusted Update hash. Reparse/containment и остальные gates
+`RecordSuccessfulSetup` не изменены. 27 новых синтетических тестов проверяют успех,
+отсутствующий/изменённый updater, независимость обеих hash-проверок, обычные файлы,
+manifest/package, reparse ancestors и traversal; реальный Setup не вызывается.
+Windows CI включён для PR в `feat/v0.6.1`; GUI E2E и release gates остаются отдельными.
+
+Следующее описание и результаты относятся к историческому этапу 12.10.2026.
+
 Основа — PR #13, merged в `feat/v0.6.1` (`9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`).
 Реализация находится в отдельной `feat/v061-gui-bootstrapper`. Версия приложения,
 SDK/vpk161, PackId/MainExe/channel/GithubSource не меняются. Это Draft для ревью,

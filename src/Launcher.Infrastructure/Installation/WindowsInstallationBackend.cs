@@ -221,9 +221,12 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
             using ZipArchive archive = new(package, ZipArchiveMode.Read);
             foreach (ZipArchiveEntry entry in archive.Entries.Where(entry => !entry.FullName.EndsWith('/')))
             {
-                string? destination = entry.FullName.StartsWith("lib/app/", StringComparison.Ordinal)
-                    ? Contained(current, entry.FullName[8..])
-                    : entry.FullName.EndsWith("Squirrel.exe", StringComparison.Ordinal) ? Path.Combine(plan.AppDirectory, "Update.exe") : null;
+                // Velopack 1.2.161 installs this package entry at the App root, renamed to Update.exe.
+                string? destination = entry.FullName.Equals("lib/app/Squirrel.exe", StringComparison.Ordinal)
+                    ? Path.Combine(plan.AppDirectory, "Update.exe")
+                    : entry.FullName.StartsWith("lib/app/", StringComparison.Ordinal)
+                        ? Contained(current, entry.FullName[8..])
+                        : entry.FullName.EndsWith("Squirrel.exe", StringComparison.Ordinal) ? Path.Combine(plan.AppDirectory, "Update.exe") : null;
                 if (entry.FullName.EndsWith("_ExecutionStub.exe", StringComparison.Ordinal)) continue;
                 if (destination is null) continue;
                 StoragePathPolicy.EnsureNoReparsePoints(destination);
