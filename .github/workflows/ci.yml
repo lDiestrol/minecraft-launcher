@@ -40,3 +40,95 @@ jobs:
       - name: Test release feed finalization
         shell: pwsh
         run: ./tests/ReleaseFeedScriptTests.ps1
+
+  package-diagnostic:
+    needs: build-and-test
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.repository == 'lDiestrol/minecraft-launcher' &&
+      github.event.pull_request.number == 14 &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/v061-gui-bootstrapper' &&
+      github.event.pull_request.base.ref == 'feat/v0.6.1'
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      BUILD_COMMIT: ${{ github.event.pull_request.head.sha }}
+      BUILD_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Verify source and pinned tools
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'PowerShell 7 is required.' }
+          if ((git rev-parse HEAD) -cne $env:BUILD_COMMIT) { throw 'Unexpected checkout SHA.' }
+          git merge-base --is-ancestor ffcebc0afdbed96f5cd39541e55044721f7afeff HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'The verified updater fix must be included.' }
+          $tools = Get-Content .config/dotnet-tools.json -Raw | ConvertFrom-Json
+          if ($tools.tools.vpk.version -cne '1.2.161' -or $tools.tools.vpk.rollForward) { throw 'vpk must be pinned to 1.2.161.' }
+          foreach ($project in @('src/Launcher.Infrastructure/Launcher.Infrastructure.csproj', 'tools/Launcher.InstallerDiagnosticHost/Launcher.InstallerDiagnosticHost.csproj')) {
+            [xml]$xml = Get-Content -LiteralPath $project -Raw
+            $sdk = @($xml.SelectNodes("/Project/ItemGroup/PackageReference[@Include='Velopack']"))
+            if ($sdk.Count -ne 1 -or $sdk[0].GetAttribute('Version') -cne '1.2.161') { throw "Unexpected Velopack SDK in $project." }
+          }
+
+      - name: Test static artifact verifier
+        run: python -B -m unittest discover -s tests -p DiagnosticArtifactTests.py
+
+      - name: Package and verify Diagnostic only
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Build scripts discover MSVC via vswhere and require rc/cl/mt from the Windows SDK.
+          ./scripts/package-diagnostic-bootstrapper.ps1 | Tee-Object -Variable packagingOutput
+          # build-bootstrapper.ps1 emits the completed bundle path as its final output item.
+          $bundle = [string](@($packagingOutput)[-1])
+          if (!(Test-Path -LiteralPath $bundle -PathType Leaf)) { throw 'Diagnostic bundle output is missing.' }
+          $checksums = Join-Path (Split-Path -Parent $bundle) 'SHA256SUMS.txt'
+          python ./scripts/verify-diagnostic-artifact.py --bundle $bundle --checksums $checksums --stub ./artifacts/bootstrapper/native-diagnostic/bootstrapper.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Diagnostic artifact verification failed.' }
+          $artifact = Join-Path $PWD 'artifacts/diagnostic-ci'
+          New-Item -ItemType Directory -Path $artifact | Out-Null
+          Copy-Item -LiteralPath $bundle -Destination (Join-Path $artifact 'MinecraftLauncher-Setup.exe')
+          Copy-Item -LiteralPath $checksums -Destination (Join-Path $artifact 'SHA256SUMS.txt')
+          python ./scripts/verify-diagnostic-artifact.py --bundle (Join-Path $artifact 'MinecraftLauncher-Setup.exe') --checksums (Join-Path $artifact 'SHA256SUMS.txt') --stub ./artifacts/bootstrapper/native-diagnostic/bootstrapper.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Staged artifact verification failed.' }
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $artifact 'MinecraftLauncher-Setup.exe')).Hash.ToLowerInvariant()
+          $info = [ordered]@{
+            commit = $env:BUILD_COMMIT
+            verifiedFixCommit = 'ffcebc0afdbed96f5cd39541e55044721f7afeff'
+            packId = 'MinecraftLauncher.BootstrapperDiagnostic'
+            mainExe = 'VendorProbe.exe'
+            version = '0.0.1'
+            channel = 'dev'
+            velopackVersion = '1.2.161'
+            setupSha256 = $hash
+            runUrl = $env:BUILD_RUN_URL
+          }
+          $info | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifact 'build-info.json') -Encoding utf8
+          "Diagnostic commit: $env:BUILD_COMMIT`nSetup SHA-256: $hash" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload verified diagnostic artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: minecraft-launcher-diagnostic-${{ github.event.pull_request.head.sha }}
+          path: |
+            artifacts/diagnostic-ci/MinecraftLauncher-Setup.exe
+            artifacts/diagnostic-ci/SHA256SUMS.txt
+            artifacts/diagnostic-ci/build-info.json
+          if-no-files-found: error
+          retention-days: 7

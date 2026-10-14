@@ -1,5 +1,30 @@
 # Единый журнал Minecraft Launcher
 
+> Diagnostic packaging CI PR #14, 14.10.2026 (UTC+05:00), исходный HEAD
+> `ffcebc0afdbed96f5cd39541e55044721f7afeff`. Его Windows CI подтверждён:
+> [run38605070220](https://github.com/lDiestrol/minecraft-launcher/actions/runs/38605070220),
+> Core494 + App19 = 513/513, build0 warnings/errors, restore/format/feed tests успешны.
+> Добавлен отдельный `package-diagnostic` job после успешного `build-and-test`.
+> Допускается только same-repository PR #14, head `feat/v061-gui-bootstrapper`,
+> base `feat/v0.6.1`; checkout exact head SHA, проверяется ancestry исправления ffcebc0.
+> Существующий `package-diagnostic-bootstrapper.ps1` собирает только compiled Diagnostic:
+> `MinecraftLauncher.BootstrapperDiagnostic`, `VendorProbe.exe`, 0.0.1/dev, SDK/vpk161.
+> Новый data-only verifier сверяет native PE/diagnostic stub, compiled helper binding,
+> MCBOOT01 footer/index, SHA-256 всех embedded файлов, catalog/package identity и
+> SHA256SUMS. Никакой product EXE не запускается. Стандартный vpk CompatUtil161
+> проверен по source: проверка VelopackApp/SDK читает PE/IL, не запускает Main.
+> В Actions artifact сроком7 дней входят только `MinecraftLauncher-Setup.exe`,
+> `SHA256SUMS.txt`, `build-info.json` с точным source SHA и hash EXE.
+> Packaging/upload разрешены владельцем в существующей ветке PR; не Release/tag/merge.
+> Debian: actionlint1.7.12, Python verifier tests11/11, restore/full cross-build
+> (0 warnings/errors), full format verify, diff-check и47 local Markdown links успешны.
+> Независимый review в отдельном контексте: замечаний нет; Windows packaging на Debian
+> не выполнялся. Текущие HEAD, CI и доступность artifact определяются по Git/GitHub
+> [CI Actions](https://github.com/lDiestrol/minecraft-launcher/actions/workflows/ci.yml).
+> Получение artifact не подтверждает повторный Windows GUI E2E. Установку/удаление/
+> обновление не запускать; прежний E2E-стенд и пользовательские данные сохраняются.
+> Ниже — исторический снимок исправления verification перед diagnostic packaging CI.
+
 > Исправление verification PR #14, 14.10.2026 (UTC+05:00), Debian 13 x64.
 > Проверены GitHub/Open PR и исходный HEAD `d1d4dfdfe42806c40d2113d77e8f45eabcbda9aa`;
 > base `feat/v0.6.1` — `9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`, main — `bd98ecd`.

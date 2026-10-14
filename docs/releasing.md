@@ -157,6 +157,34 @@ format/diff-check/local links чистые; production и diagnostic packaging �
 ACL/rename/symlink/recheck/read-pin inheritance/canary — настоящие Win32 API.
 Полная межпользовательская атака и реальный FAT/exFAT остаются VM gates.
 
+### Diagnostic artifact в Windows CI, 14.10.2026
+
+Отдельный `package-diagnostic` в [ci.yml](../.github/workflows/ci.yml) зависит от
+успешного build/test/format job. Он доступен только PR #14 из официального репозитория,
+head `feat/v061-gui-bootstrapper`, base `feat/v0.6.1`; forks/другие PR и push/main
+не выполняют этот job. Checkout использует точный PR head SHA, а не merge commit;
+обязательна ancestry проверенного updater fix `ffcebc0`. Windows runner предоставляет
+PowerShell7, .NET10, MSVC и Windows SDK; прежние build scripts проверяют C++ tools.
+
+Вызывается только [package-diagnostic-bootstrapper.ps1](../scripts/package-diagnostic-bootstrapper.ps1):
+PackId `MinecraftLauncher.BootstrapperDiagnostic`, MainExe `VendorProbe.exe`, 0.0.1/dev,
+SDK/vpk строго1.2.161, без signing/release/production packaging. Стандартная vpk
+проверка приложения сохраняется: pinned
+[CompatUtil161](https://github.com/velopack/velopack/blob/1.2.161/src/vpk/Velopack.Packaging.Windows/CompatUtil.cs)
+читает PE/IL и не запускает приложение. Native/Setup/VendorProbe и E2E не запускаются.
+
+[verify-diagnostic-artifact.py](../scripts/verify-diagnostic-artifact.py) статически
+проверяет native AMD64 PE, Diagnostic marker/точное совпадение compiled stub, compiled
+helper `diagnostic-profile`, MCBOOT01/index/hash каждого embedded файла, pinned
+catalog/full-package identity и точное соответствие EXE `SHA256SUMS.txt`.
+Verifier покрыт [синтетическими тестами](../tests/DiagnosticArtifactTests.py).
+Ошибка до upload завершает job; copied upload files проверяются повторно.
+Artifact `minecraft-launcher-diagnostic-<PR-head-SHA>` содержит ровно outer EXE,
+`SHA256SUMS.txt`, `build-info.json` (source SHA, verified fix SHA, identity, EXE hash,
+Actions run URL), хранится7 дней. Бинарные файлы остаются вне Git. Перед последующим
+отдельно согласованным E2E сверить checksum и build-info; unsigned EXE может вызвать
+SmartScreen. Packaging/integrity evidence не заменяет реальную Windows установку.
+
 ### Windows E2E — не завершён
 
 Диагностический пакет имеет отдельный compiled PackId
