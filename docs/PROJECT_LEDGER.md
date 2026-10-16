@@ -22,9 +22,14 @@
 > Debian: restore и full cross-build с EnableWindowsTargeting=true успешны, 0 warnings/
 > errors; portable xUnit156/156, full format verify, Python verifier11/11, fixture
 > hashes/index/no-overwrite, actionlint1.7.12 и58 local Markdown links успешны.
-> Plain Debian restore требует Windows-targeting property; MSVC/native/WPF поведение
-> подтверждается отдельно [Windows CI](https://github.com/lDiestrol/minecraft-launcher/actions/workflows/ci.yml),
-> актуальный SHA/status — Git/GitHub. Эти Debian результаты не выдаются за Windows тест.
+> Windows [CI run38970215144](https://github.com/lDiestrol/minecraft-launcher/actions/runs/38970215144)
+> для implementation commit `b47ee1c71dddcd488e8616da06dbc5be943c7700` успешен:
+> Core494 + WPF19 =513/513, build0 warnings/errors, restore/format/feed и Python11/11;
+> native production178 / diagnostic180 checks, обе GUI lifecycle suites, новые
+> diagnostic71 checks прошли с MSVC /W4 /WX. package-diagnostic skipped, API artifacts=0.
+> Plain Debian restore требует Windows-targeting property; Debian cross-build не
+> заменяет Windows tests. Итоговый HEAD включает отдельную запись результатов;
+> актуальные SHA/status — [GitHub CI](https://github.com/lDiestrol/minecraft-launcher/actions/workflows/ci.yml).
 > Независимые architecture и code/security reviews в отдельном контексте: блокирующих
 > P0–P2 нет. Ограничения: short write/flush может оставить неполный evidence; startup/
 > window exception paths не покрыты отдельным интеграционным вызовом.

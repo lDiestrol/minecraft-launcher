@@ -170,7 +170,9 @@ binaries используются только внутри runner. Реальн
 Диагностический `--smoke` требует нового evidence leaf под существующим безопасным
 parent. Writer сам создаёт protected private leaf, удерживает проверенные предки,
 отказывается от existing directory/reparse/collision. Не создавайте каталог evidence
-заранее. `failure.json` содержит bounded controlled category/stage и typed ACL path/
+заранее. Для диагностики отказа D: evidence выбирается на отдельном томе/пути,
+который проходит ту же строгую проверку предков (например, проверенный C:).
+`failure.json` содержит bounded controlled category/stage и typed ACL path/
 rule/masks; полный контракт и ограничения — [architecture.md](architecture.md).
 Старые screenshots, `launched.json` и Main markers сохраняют назначение; существующие
 файлы не перезаписываются. Ошибки записи evidence безопасно поглощаются; short write/
