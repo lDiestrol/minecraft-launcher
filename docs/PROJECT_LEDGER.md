@@ -1,5 +1,45 @@
 # Единый журнал Minecraft Launcher
 
+> PR #14: ранние diagnostic failures, 17.10.2026 (UTC+05:00), Debian13 x64.
+> Исходный HEAD `a663c336183fe4f06acc36cf1b174830d0c3b759` подтверждён Git/GitHub;
+> [PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14) Open/Draft,
+> head `feat/v061-gui-bootstrapper`, base `feat/v0.6.1`. HTTPS fetch через существующий
+> gh credential подтвердил origin/main `bd98ecd721298981508d54466d11089c1647ab4f` и
+> origin/feat/v0.6.1 `9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`. Настроенный SSH origin
+> указывает тот же официальный repo; SSH config/publickey на DEV-SERVER не исправлялись.
+> Diagnostic `--smoke` сохраняет controlled bounded failure.json, stage и typed ACL
+> path/policy/rule/masks в новом проверенном private evidence leaf. Fixed filenames,
+> pinned audited ancestors, protected DACL, CREATE_NEW, no reparse/traversal/adoption;
+> failures записи best effort без fallback/ослабления установки. Screenshots/markers
+> сохранены, их existing evidence тоже не перезаписывается. Production security
+> checks/ordinary token/helper/payload integrity не ослаблены.
+> Добавлены Windows regressions настоящего installWorker: unsafe ancestor, ACL category,
+> отсутствие staging/extraction/helper, JSON/schema/limits/no secret text, evidence
+> collision/locked target/changed ACL/reparse/traversal. Прежние native safety/lifecycle
+> suites выполняются в PR CI для обеих flavours на data-only NONEXECUTABLE fixture.
+> package-diagnostic безусловно отключён: новый packaged/downloadable Windows artifact
+> не разрешён. Разрешены commit/обычный push только в существующую PR ветку, без merge.
+> Debian: restore и full cross-build с EnableWindowsTargeting=true успешны, 0 warnings/
+> errors; portable xUnit156/156, full format verify, Python verifier11/11, fixture
+> hashes/index/no-overwrite, actionlint1.7.12 и58 local Markdown links успешны.
+> Plain Debian restore требует Windows-targeting property; MSVC/native/WPF поведение
+> подтверждается отдельно [Windows CI](https://github.com/lDiestrol/minecraft-launcher/actions/workflows/ci.yml),
+> актуальный SHA/status — Git/GitHub. Эти Debian результаты не выдаются за Windows тест.
+> Независимые architecture и code/security reviews в отдельном контексте: блокирующих
+> P0–P2 нет. Ограничения: short write/flush может оставить неполный evidence; startup/
+> window exception paths не покрыты отдельным интеграционным вызовом.
+> [Архитектурный анализ и варианты](architecture.md): AU Modify mask0x001301BF на D:\
+> пересекает текущий запрет в0x112, но не содержит FILE_DELETE_CHILD/WRITE_DAC/WRITE_OWNER.
+> Protected child не доказывает безопасность предков/identity; secure-anchor требует
+> отдельного design/Windows cross-user race tests и здесь не реализован.
+> По сообщению владельца C: GUI clean E2E пройден; D: run
+> `2eb6e67196fb42d2876f5aff153b08a1` отказал до payload. Точное исключение старого GUI
+> не сохранено; новый реальный GUI E2E не выполнялся. Установщик/Setup на DEV-SERVER
+> не запускались, Windows ACL и старые E2E результаты не менялись. Нет merge/release,
+> изменений main/feat/v0.6.1/release/v0.6.0. Следующий шаг после CI — отдельное решение
+> владельца о новом diagnostic artifact/E2E либо проектировании broad-root NTFS.
+> Ниже — исторические снимки предыдущих этапов.
+
 > Diagnostic packaging CI PR #14, 14.10.2026 (UTC+05:00), исходный HEAD
 > `ffcebc0afdbed96f5cd39541e55044721f7afeff`. Его Windows CI подтверждён:
 > [run38605070220](https://github.com/lDiestrol/minecraft-launcher/actions/runs/38605070220),

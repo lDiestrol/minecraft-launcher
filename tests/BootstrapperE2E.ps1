@@ -69,7 +69,7 @@ foreach ($volume in $Volumes) {
         $launchId = [guid]::NewGuid().ToString('N')
         $process = Start-Process -FilePath $exe -ArgumentList "--smoke `"$base`" `"$images`" $launchId" -WindowStyle Normal -PassThru
         if (!$process.WaitForExit(180000)) { throw 'Diagnostic GUI did not finish; retain artifacts, do not remove an intent.' }
-        if ($process.ExitCode -ne 0 -or !(Test-Path -LiteralPath (Join-Path $images 'success.bmp'))) { throw 'GUI reported failure; inspect screenshots and helper.log.' }
+        if ($process.ExitCode -ne 0 -or !(Test-Path -LiteralPath (Join-Path $images 'success.bmp'))) { throw 'GUI reported failure; inspect failure.json, screenshots and helper.log.' }
         $installed = Get-ItemProperty -LiteralPath $registration
         if ($installed.InstallLocation.TrimEnd('\') -ne $app) { throw 'Unexpected diagnostic registry App path.' }
         $locator = Get-Content -LiteralPath (Join-Path $control 'storage-root.json') -Raw | ConvertFrom-Json

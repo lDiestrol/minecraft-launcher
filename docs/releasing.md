@@ -157,7 +157,33 @@ format/diff-check/local links чистые; production и diagnostic packaging �
 ACL/rename/symlink/recheck/read-pin inheritance/canary — настоящие Win32 API.
 Полная межпользовательская атака и реальный FAT/exFAT остаются VM gates.
 
-### Diagnostic artifact в Windows CI, 14.10.2026
+### Diagnostic failures и CI без packaging, 17.10.2026
+
+В рамках текущей задачи `package-diagnostic` **безусловно отключён** в
+[ci.yml](../.github/workflows/ci.yml). Возврат packaging/upload требует отдельного
+разрешения владельца. Обычный PR CI выполняет .NET tests/format и обе native flavours
+`/W4 /WX`, прежние native safety/lifecycle tests и новые diagnostic worker/evidence
+regressions. Fixture — data-only MCBOOT01, без runnable helper/Setup; packaged Windows
+installer и новый downloadable Windows artifact не создаются. Временные native test
+binaries используются только внутри runner. Реальный GUI/Setup E2E не запускается.
+
+Диагностический `--smoke` требует нового evidence leaf под существующим безопасным
+parent. Writer сам создаёт protected private leaf, удерживает проверенные предки,
+отказывается от existing directory/reparse/collision. Не создавайте каталог evidence
+заранее. `failure.json` содержит bounded controlled category/stage и typed ACL path/
+rule/masks; полный контракт и ограничения — [architecture.md](architecture.md).
+Старые screenshots, `launched.json` и Main markers сохраняют назначение; существующие
+файлы не перезаписываются. Ошибки записи evidence безопасно поглощаются; short write/
+flush может оставить неполный файл. Startup до создания проверенного evidence не
+использует `startup-error.log` или иной fallback на непроверенный путь.
+
+По сообщению владельца Windows10 clean E2E на C: пройден. Повторный D: run
+`2eb6e67196fb42d2876f5aff153b08a1` завершился до extraction; найденный AU Modify
+root ACL объясняет fail-closed поведение. Точное exception detail старого запуска
+не доказано. Новый E2E и создание diagnostic artifact требуют отдельного разрешения;
+старые E2E результаты, Windows ACL и пользовательские данные в этой задаче не меняются.
+
+### Исторический diagnostic artifact в Windows CI, 14.10.2026
 
 Отдельный `package-diagnostic` в [ci.yml](../.github/workflows/ci.yml) зависит от
 успешного build/test/format job. Он доступен только PR #14 из официального репозитория,
@@ -185,7 +211,7 @@ Actions run URL), хранится7 дней. Бинарные файлы ост
 отдельно согласованным E2E сверить checksum и build-info; unsigned EXE может вызвать
 SmartScreen. Packaging/integrity evidence не заменяет реальную Windows установку.
 
-### Windows E2E — не завершён
+### Историческое состояние Windows E2E, 12–14.10.2026
 
 Диагностический пакет имеет отдельный compiled PackId
 `MinecraftLauncher.BootstrapperDiagnostic`, `VendorProbe.exe`, version0.0.1/dev и

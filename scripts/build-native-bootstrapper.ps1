@@ -35,6 +35,13 @@ if errorlevel 1 exit /b 1
 exit /b 0
 "@)
 }
+if ($Tests -and $Diagnostic) {
+    $commands = $commands.Replace('exit /b 0', @"
+cl /nologo /std:c++17 /EHsc /W4 /WX /O2 /MT /utf-8 /DINSTALLER_DIAGNOSTIC /Fo"$output\diagnostic-tests.obj" diagnostic-tests.cpp user32.lib gdi32.lib shell32.lib ole32.lib uuid.lib advapi32.lib bcrypt.lib comctl32.lib /link /SUBSYSTEM:CONSOLE /MACHINE:X64 /OUT:"$output\diagnostic-tests.exe"
+if errorlevel 1 exit /b 1
+exit /b 0
+"@)
+}
 [System.IO.File]::WriteAllText((Join-Path $output 'build.cmd'), $commands, [System.Text.Encoding]::Default)
 & cmd.exe /d /c (Join-Path $output 'build.cmd')
 if ($LASTEXITCODE -ne 0) { throw 'Native bootstrapper build failed.' }

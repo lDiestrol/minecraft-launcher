@@ -2,6 +2,18 @@
 #include "storage.h"
 #include <aclapi.h>
 
+enum class aclRule { owner, missingDacl, inheritance, unsupportedAce, unsafeAllow, incompletePrivate };
+// Structured diagnostics never classify errors by parsing exception text.
+struct namespaceAclError : std::runtime_error {
+    aclRule rule; std::wstring path; DWORD allowedMask = 0, rejectedMask = 0; bool authenticatedUsers = false, privatePayload = false;
+    namespaceAclError(aclRule ruleValue, const char* message, DWORD allowed = 0, DWORD rejected = 0, bool au = false)
+        : std::runtime_error(message), rule(ruleValue), allowedMask(allowed), rejectedMask(rejected), authenticatedUsers(au) {}
+    namespaceAclError at(const std::wstring& directory, bool privatePolicy = false) const {
+        namespaceAclError result(*this); result.path = directory; result.privatePayload = privatePolicy;
+        static_cast<std::runtime_error&>(result) = std::runtime_error(std::string(what()) + ": " + json::utf8(directory)); return result;
+    }
+};
+
 inline void requirePersistentAclFlags(DWORD flags) {
     if (!(flags & FILE_PERSISTENT_ACLS)) throw std::runtime_error("Выбранный том не поддерживает постоянные ACL. Нужен защищённый локальный том; другой диск не выбран.");
 }
@@ -25,28 +37,28 @@ inline bool trustedNamespaceSid(PSID sid, const std::wstring& user) {
 inline void verifyDirectoryDescriptor(PSECURITY_DESCRIPTOR descriptor, const std::wstring& user, bool privatePayload) {
     PSID owner = nullptr; BOOL defaulted = FALSE, present = FALSE; PACL acl = nullptr;
     check(GetSecurityDescriptorOwner(descriptor, &owner, &defaulted) != FALSE);
-    if (privatePayload ? !sidEquals(owner, user.c_str()) : !trustedNamespaceSid(owner, user)) throw std::runtime_error("untrusted directory owner");
+    if (privatePayload ? !sidEquals(owner, user.c_str()) : !trustedNamespaceSid(owner, user)) throw namespaceAclError(aclRule::owner, "untrusted directory owner");
     check(GetSecurityDescriptorDacl(descriptor, &present, &acl, &defaulted) != FALSE);
-    if (!present || !acl) throw std::runtime_error("unprotected directory DACL");
+    if (!present || !acl) throw namespaceAclError(aclRule::missingDacl, "unprotected directory DACL");
     SECURITY_DESCRIPTOR_CONTROL control{}; DWORD revision = 0; check(GetSecurityDescriptorControl(descriptor, &control, &revision) != FALSE);
-    if (privatePayload && !(control & SE_DACL_PROTECTED)) throw std::runtime_error("payload DACL inheritance is not protected");
+    if (privatePayload && !(control & SE_DACL_PROTECTED)) throw namespaceAclError(aclRule::inheritance, "payload DACL inheritance is not protected");
     bool userAllowed = false, systemAllowed = false;
     for (DWORD i = 0; i < acl->AceCount; ++i) {
         void* raw = nullptr; check(GetAce(acl, i, &raw) != FALSE); auto header = static_cast<ACE_HEADER*>(raw);
         if (header->AceFlags & INHERIT_ONLY_ACE) continue;
         if (header->AceType == ACCESS_DENIED_ACE_TYPE) continue; // Conservative allow-ACE audit; denies never authorize a path.
-        if (header->AceType != ACCESS_ALLOWED_ACE_TYPE) throw std::runtime_error("unsupported directory ACE");
+        if (header->AceType != ACCESS_ALLOWED_ACE_TYPE) throw namespaceAclError(aclRule::unsupportedAce, "unsupported directory ACE");
         auto ace = static_cast<ACCESS_ALLOWED_ACE*>(raw); PSID trustee = &ace->SidStart; DWORD mask = ace->Mask;
         GENERIC_MAPPING mapping{FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_GENERIC_EXECUTE, FILE_ALL_ACCESS}; MapGenericMask(&mask, &mapping);
         bool current = sidEquals(trustee, user.c_str()), system = IsWellKnownSid(trustee, WinLocalSystemSid) != FALSE;
         // Creating an unrelated sibling is harmless. Rewriting attributes/security, replacing children or changing reparse data is not.
         constexpr DWORD unsafe = WRITE_DAC | WRITE_OWNER | FILE_DELETE_CHILD | FILE_WRITE_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES;
         if (privatePayload ? (!current && !system && mask != 0) : (!trustedNamespaceSid(trustee, user) && (mask & unsafe)))
-            throw std::runtime_error("unsafe directory namespace ACL");
+            throw namespaceAclError(aclRule::unsafeAllow, "unsafe directory namespace ACL", mask, privatePayload ? mask : mask & unsafe, IsWellKnownSid(trustee, WinAuthenticatedUserSid) != FALSE);
         userAllowed |= current && (mask & FILE_ALL_ACCESS) == FILE_ALL_ACCESS;
         systemAllowed |= system && (mask & FILE_ALL_ACCESS) == FILE_ALL_ACCESS;
     }
-    if (privatePayload && (!userAllowed || !systemAllowed)) throw std::runtime_error("incomplete private directory ACL");
+    if (privatePayload && (!userAllowed || !systemAllowed)) throw namespaceAclError(aclRule::incompletePrivate, "incomplete private directory ACL");
 }
 inline void verifyDirectoryHandle(HANDLE file, const std::wstring& path, const std::wstring& user, bool privatePayload) {
     FILE_ATTRIBUTE_TAG_INFO attributes{}; check(GetFileInformationByHandleEx(file, FileAttributeTagInfo, &attributes, sizeof(attributes)) != FALSE);
@@ -59,6 +71,7 @@ inline void verifyDirectoryHandle(HANDLE file, const std::wstring& path, const s
         reinterpret_cast<PSECURITY_DESCRIPTOR*>(&descriptor.p));
     if (error != ERROR_SUCCESS) throw std::runtime_error("cannot verify directory security " + std::to_string(error));
     try { verifyDirectoryDescriptor(descriptor.p, user, privatePayload); }
+    catch (const namespaceAclError& error) { throw error.at(path, privatePayload); }
     catch (const std::exception& error) { throw std::runtime_error(std::string(error.what()) + ": " + json::utf8(path)); }
 }
 class secureNamespace {

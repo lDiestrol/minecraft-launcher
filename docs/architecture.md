@@ -333,3 +333,86 @@ Process creation не доказывает Main: host атомарно публ�
 timeout не разрешает cleanup intent. Production Launcher не получает diagnostic args.
 Tests/native console/diagnostic vendor host не входят в
 production bundle. Реальные E2E и release gates: [releasing.md](releasing.md).
+
+
+### Ранние diagnostic failures и NTFS root ACL (review 17.10.2026)
+
+Только compiled Diagnostic с `--smoke <base> <evidence> <launchId>` создаёт
+`failure.json`. Параметр evidence обозначает **новый** приватный leaf; его parent
+должен уже существовать. Все предки, включая корень тома, проверяются и удерживаются
+через прежний `secureNamespace(create=false)`. Leaf создаётся атомарно с protected
+DACL текущий SID/SYSTEM и проверяется по открытому handle. Existing leaf/collision,
+traversal, reparse, небезопасный owner/DACL и том без persistent ACL отвергаются.
+До завершения этой проверки запись evidence запрещена: отказ самой подготовки
+evidence, token/COM startup не обещает наличие файла и не использует fallback log.
+
+`failure.json` — flat UTF-8 schema1, максимум 16384 bytes. Общие поля:
+`schemaVersion`, `launchId` (32 lowercase hex), `stage`, `category`, `detail`.
+Stage — фиксированное имя операции; category — `namespace_acl` для typed ACL refusal,
+иначе `bootstrapper_error`. Detail — фиксированный текст из кода, без `what()`.
+ACL дополнительно содержит normalized `path` фактически проверенного каталога,
+`policy` (`directory_namespace` / `private_payload`), `rule`, числовые `allowedMask`
+(mapped generic rights) / `rejectedMask` и фиксированный `trustee`:
+`authenticated_users` либо `other_or_not_applicable`. Остальные SID, полный descriptor,
+helper messages, locator/file contents, environment, команды и токены не копируются.
+Путь может содержать имя пользователя; это локальное diagnostic evidence, не telemetry.
+Owner/DACL/inheritance/ACE/private-full-control отказы имеют отдельные rule codes.
+
+Worker записывает отказ до отправки GUI event, сохраняя исходную стадию даже при
+ошибке обработки события или закрытии окна. Startup после подготовки evidence и
+GUI exceptions используют тот же writer. `failure.json`, прежние `selection.bmp`,
+`preflight.bmp`, `success.bmp`, `failure.bmp`, `launched.bmp` и `launched.json`
+записываются только по фиксированным именам с `CREATE_NEW | FILE_FLAG_OPEN_REPARSE_POINT`,
+без share-write/delete; перед каждой записью повторяется audit pinned namespace.
+JSON/marker ограничены 16 KiB, bitmap — 32 MiB. Ошибка записи/flush/ACL recheck
+поглощается, исходный отказ установки сохраняется; existing evidence не заменяется.
+При short write/flush failure возможен неполный файл: evidence best effort,
+повторная попытка его не исправляет. Screenshots и Main marker contract сохранены.
+Production не получает writer/CLI override, ACL/install/helper/hash решения прежние.
+
+Независимый review текущей модели не выявил критической проблемы. По данным владельца,
+Windows10 clean GUI E2E на C: успешен; run `2eb6e67196fb42d2876f5aff153b08a1` на D:
+отказал до extraction. Для `Authenticated Users: Modify`, mask `0x001301BF`,
+пересечение с текущим namespace запретом равно `0x112`: `FILE_ADD_FILE/FILE_WRITE_DATA`,
+`FILE_WRITE_EA`, `FILE_WRITE_ATTRIBUTES`. Код сначала проверяет `D:\`, до создания
+`.launcher-install`; это согласуется с предполагаемым исключением
+`unsafe directory namespace ACL: D:\`. Точное исключение старого запуска не сохранено;
+новая диагностика ещё не испытана реальным GUI E2E на этом томе.
+
+Важно различать права: эта конкретная mask **не содержит** `FILE_DELETE_CHILD`,
+`WRITE_DAC`, `WRITE_OWNER`. Создание файлов в root само по себе не даёт записи в
+существующий private child. `DELETE` относится к объекту с ACE, а root volume
+не может быть переименован. См. Microsoft [directory rights](https://learn.microsoft.com/en-us/windows/win32/fileio/file-access-rights-constants)
+и [rename semantics](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information).
+
+Protected DACL останавливает [inheritance](https://learn.microsoft.com/en-us/windows/win32/secauthz/security-descriptor-control),
+но не доказывает безопасность всей цепочки parent→child. `DELETE` у child или
+`FILE_DELETE_CHILD` у parent может разрешить удаление/rename; `WRITE_DAC/WRITE_OWNER`
+позволяет изменить boundary. [MS-FSA access/sharing rules](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/82b364ce-6d7b-422f-8d88-4db32eea809a)
+описывают в том числе получение DELETE через parent. Обычный промежуточный каталог
+с Modify отличается от непереименовываемого volume root.
+
+No-delete handles с `FILE_LIST_DIRECTORY` защищают текущую модель от замены,
+а metadata-only pins недостаточны. Однако directory handles с `FILE_SHARE_WRITE`
+не блокируют изменение reparse data сами по себе: [MS-FSA FSCTL_SET_REPARSE_POINT](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/4aeefef8-92c3-4abc-af7a-a610caf8a165)
+проверяет `FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES`. Сейчас эти права у недоверенных
+SID запрещены ACL audit. Final-path/hash rechecks — наблюдения, а не атомарная
+транзакция последующих pathname operations. Handle сохраняет объект, но не всегда
+его имя после допустимого unlink/replacement; POSIX rename требует отдельного анализа.
+GUI→helper handle handoff закрывает lifetime gap только в рамках текущих предпосылок.
+
+| Вариант поддержки broad-root NTFS | Угрозы и ограничения |
+| --- | --- |
+| Сохранить текущую fail-closed политику | Наименьший риск; часть обычных data volumes отвергается. Рекомендуется для PR #14 |
+| Внешнее provision безопасного namespace администратором | Требует отдельного разрешения и изменения внешней конфигурации. Один private child не устраняет отказ root в текущем алгоритме |
+| Новая secure-anchor модель | Потенциально принимает именно root Modify без delete-child; нужны отдельный design и Windows adversarial tests. Исключение для буквы D: или пропуск root недостаточны |
+| Привилегированный broker/provisioner | Может создавать anchor, но добавляет привилегированную attack surface, ownership/recovery/deployment contracts |
+
+Будущий secure-anchor review должен доказать безопасное создание и переход от root
+к anchor, учитывать заранее открытые handles, collision и precreated trees, reparse,
+rename/delete/POSIX races, file/volume identity и открытия относительно pinned handles.
+Pins нужны на всё время операции и у helper, затем отдельные правила после выхода и
+reboot. Безопасное staging не доказывает безопасность конечных App/control/recovery/
+launch путей. Обязательны атаки другого непривилегированного SID на Windows10/11,
+concurrent rename/delete/reparse и явные границы same-SID/admin/SYSTEM/volume remapping.
+Эта новая модель в PR #14 не реализована; проверки `secureNamespace()` не ослаблены.

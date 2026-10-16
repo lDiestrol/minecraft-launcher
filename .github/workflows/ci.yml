@@ -41,9 +41,34 @@ jobs:
         shell: pwsh
         run: ./tests/ReleaseFeedScriptTests.ps1
 
+      - name: Test static diagnostic artifact verifier
+        run: python -B -m unittest discover -s tests -p DiagnosticArtifactTests.py
+
+      - name: Native safety, diagnostics and GUI component tests (no packaging)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/build-native-bootstrapper.ps1 -Tests
+          ./scripts/build-native-bootstrapper.ps1 -Diagnostic -Tests
+          $fixture = Join-Path $PWD 'artifacts/bootstrapper/native-test-fixture.bin'
+          python ./tests/create-native-test-bundle.py $fixture
+          if ($LASTEXITCODE -ne 0) { throw 'Data-only native fixture generation failed.' }
+          foreach ($flavor in @('production', 'diagnostic')) {
+            $bin = Join-Path $PWD "artifacts/bootstrapper/native-$flavor"
+            $root = "$env:SystemDrive\LauncherNativeCI-$([guid]::NewGuid().ToString('N'))"
+            & "$bin/native-tests.exe" $fixture $root
+            if ($LASTEXITCODE -ne 0) { throw "Native $flavor checks failed." }
+            & "$bin/native-lifecycle-tests.exe" "$bin/native-tests.exe" "$root/lifecycle"
+            if ($LASTEXITCODE -ne 0) { throw "Native $flavor lifecycle checks failed." }
+          }
+          & ./artifacts/bootstrapper/native-diagnostic/diagnostic-tests.exe $fixture "$env:SystemDrive\LauncherDiagnosticCI-$([guid]::NewGuid().ToString('N'))"
+          if ($LASTEXITCODE -ne 0) { throw 'Early failure diagnostic checks failed.' }
+
   package-diagnostic:
     needs: build-and-test
+    # Packaging is suspended for this diagnostics-only task. Re-enable only with separate owner authorization.
     if: >-
+      false &&
       github.event_name == 'pull_request' &&
       github.repository == 'lDiestrol/minecraft-launcher' &&
       github.event.pull_request.number == 14 &&
