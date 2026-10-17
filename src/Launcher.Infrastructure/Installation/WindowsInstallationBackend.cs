@@ -18,6 +18,7 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
     private readonly Func<long, string, bool> _hasSpace;
     private readonly Func<string> _identity;
     private readonly bool _inspectRegistration;
+    private readonly InstallationProduct _product;
     private readonly Func<InstallationRegistration?> _registration;
 
     public WindowsInstallationBackend() : this(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -26,14 +27,15 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
 
     internal WindowsInstallationBackend(string localData, string executionDirectory, Func<string> identity,
         Func<long, string, bool> hasSpace, bool inspectRegistration = false,
-        Func<InstallationRegistration?>? registration = null)
+        Func<InstallationRegistration?>? registration = null, InstallationProduct? product = null)
     {
         _localData = localData;
         _executionDirectory = executionDirectory;
         _identity = identity;
         _hasSpace = hasSpace;
         _inspectRegistration = inspectRegistration;
-        _registration = registration ?? (() => InstallationRegistration.Read(PackId));
+        _product = product ?? InstallationProduct.Launcher;
+        _registration = registration ?? (() => InstallationRegistration.Read(_product.PackId));
     }
 
     private StorageRootResolver Resolver(string? app = null) => new(_localData, app ?? _executionDirectory);
@@ -43,7 +45,7 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
         string sid = _identity(); // Token check precedes ANY per-user filesystem side effects.
         StorageRootResolver resolver = Resolver();
         return new(sid, resolver.InspectConfiguredRoot(), HasData(resolver.LegacyRootDirectory),
-            HasData(Path.Combine(_localData, PackId)) || RegisteredApp() is not null,
+            HasData(Path.Combine(_localData, _product.PackId)) || RegisteredApp() is not null,
             InstallationIntentStore.Read(resolver.ControlDirectory) is not null);
     }
 
@@ -219,9 +221,12 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
             using ZipArchive archive = new(package, ZipArchiveMode.Read);
             foreach (ZipArchiveEntry entry in archive.Entries.Where(entry => !entry.FullName.EndsWith('/')))
             {
-                string? destination = entry.FullName.StartsWith("lib/app/", StringComparison.Ordinal)
-                    ? Contained(current, entry.FullName[8..])
-                    : entry.FullName.EndsWith("Squirrel.exe", StringComparison.Ordinal) ? Path.Combine(plan.AppDirectory, "Update.exe") : null;
+                // Velopack 1.2.161 installs this package entry at the App root, renamed to Update.exe.
+                string? destination = entry.FullName.Equals("lib/app/Squirrel.exe", StringComparison.Ordinal)
+                    ? Path.Combine(plan.AppDirectory, "Update.exe")
+                    : entry.FullName.StartsWith("lib/app/", StringComparison.Ordinal)
+                        ? Contained(current, entry.FullName[8..])
+                        : entry.FullName.EndsWith("Squirrel.exe", StringComparison.Ordinal) ? Path.Combine(plan.AppDirectory, "Update.exe") : null;
                 if (entry.FullName.EndsWith("_ExecutionStub.exe", StringComparison.Ordinal)) continue;
                 if (destination is null) continue;
                 StoragePathPolicy.EnsureNoReparsePoints(destination);
@@ -247,7 +252,7 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
             StoragePathPolicy.EnsureNoReparsePoints(manifestFile);
             using FileStream installedManifest = SafeLeafFile.OpenRead(manifestFile);
             VerifyManifest(installedManifest, plan.Payload);
-            return File.Exists(Path.Combine(current, MainExe)) &&
+            return File.Exists(Path.Combine(current, _product.MainExe)) &&
                 Same(Resolver(plan.AppDirectory).InspectConfiguredRoot()!, plan.GameDataDirectory);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or
@@ -272,8 +277,8 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
         XElement metadata = XDocument.Load(reader).Descendants().Single(element => element.Name.LocalName == "metadata");
         string Value(string name) => metadata.Elements().SingleOrDefault(element => element.Name.LocalName == name)?.Value ?? "";
         string title = Value("title");
-        return _registration()?.Matches(PackId, plan.AppDirectory, MainExe, plan.Payload.Version,
-            string.IsNullOrEmpty(title) ? PackId : title, Value("authors")) == true;
+        return _registration()?.Matches(_product.PackId, plan.AppDirectory, _product.MainExe, plan.Payload.Version,
+            string.IsNullOrEmpty(title) ? _product.PackId : title, Value("authors")) == true;
     }
 
     // Called only after successful native Setup exit AND installer-tree rundown. Tests simulate that boundary explicitly.
@@ -323,7 +328,7 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
             if (!names.Add(canonical)) throw Error(InstallationError.Payload, "Повторяющиеся пути в пакете.");
             if (entry.FullName.StartsWith("lib/", StringComparison.Ordinal) && !entry.FullName.StartsWith("lib/app/", StringComparison.Ordinal))
                 throw Error(InstallationError.Payload, "Неожиданная раскладка библиотек в пакете.");
-            main |= entry.FullName == "lib/app/" + MainExe;
+            main |= entry.FullName == "lib/app/" + _product.MainExe;
             if (entry.FullName.EndsWith(".__symlink", StringComparison.Ordinal) ||
                 (entry.ExternalAttributes >> 16 & 0xF000) == 0xA000)
                 throw Error(InstallationError.Payload, "Ссылки в установочном пакете запрещены.");
@@ -333,19 +338,19 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
         return extracted;
     }
 
-    private static void VerifyManifest(Stream stream, InstallationPayload payload)
+    private void VerifyManifest(Stream stream, InstallationPayload payload)
     {
         if (stream.Length > 65536) throw Error(InstallationError.Payload, "Неверный размер установленного manifest.");
         using XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null });
         VerifyManifest(reader, payload);
     }
 
-    private static void VerifyManifest(XmlReader reader, InstallationPayload payload)
+    private void VerifyManifest(XmlReader reader, InstallationPayload payload)
     {
         XElement metadata = XDocument.Load(reader).Descendants().Single(element => element.Name.LocalName == "metadata");
         string Value(string name) => metadata.Elements().SingleOrDefault(element => element.Name.LocalName == name)?.Value ?? "";
-        if (Value("id") != PackId || Value("version") != payload.Version || Value("channel") != payload.Channel ||
-            Value("mainExe") != MainExe || Value("machineArchitecture") != "x64" || Value("runtimeDependencies").Length != 0)
+        if (Value("id") != _product.PackId || Value("version") != payload.Version || Value("channel") != payload.Channel ||
+            Value("mainExe") != _product.MainExe || Value("machineArchitecture") != "x64" || Value("runtimeDependencies").Length != 0)
             throw Error(InstallationError.Payload, "Пакет не соответствует ожидаемой идентичности Launcher или требует внешних компонентов.");
     }
 
@@ -376,7 +381,7 @@ internal sealed class WindowsInstallationBackend : IInstallationBackend
         return _registration()?.Values.GetValueOrDefault("InstallLocation") as string;
     }
 
-    private static string CurrentUserSid()
+    internal static string CurrentUserSid()
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
         using WindowsIdentity? impersonated = WindowsIdentity.GetCurrent(true);

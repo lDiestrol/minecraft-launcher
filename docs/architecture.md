@@ -162,9 +162,9 @@ Log handle append-only; невозможность безопасной запи
 
 ## Installation Coordinator (API v1)
 
-`InstallationCoordinator` в Infrastructure предоставляет managed API для будущего
-native Win32 GUI через отдельный managed helper. GUI, IPC transport и helper packaging
-ещё не реализованы. `IInstallationBackend` отделяет порядок операций от Windows/FS.
+`InstallationCoordinator` в Infrastructure предоставляет managed API для native
+Win32 GUI через реализованный отдельный self-contained managed helper и NDJSON IPC.
+Packaging GUI/helper описан ниже. `IInstallationBackend` отделяет порядок операций от Windows/FS.
 Основные операции: `Inspect()`, `SuggestBaseDirectory(volumeRoot)`, `Preflight(request)`
 и `InstallAsync(request, progress, cancellationToken)`. Preflight возвращает фактические
 App/GameData/staging paths и RequiredBytes; выполняет короткие CreateNew/DeleteOnClose
@@ -242,3 +242,189 @@ SDK update-download fallback при unwritable App пока не устранё�
 ## Release packaging
 
 Authoritative version хранится в `Directory.Build.props`. `scripts/build-release.ps1` выполняет self-contained `win-x64` publish и pinned `vpk 1.2.161`, создаёт Setup/full/portable/release index и `SHA256SUMS.txt`. Детали: [releasing.md](releasing.md).
+
+### Native bootstrapper и IPC v1
+
+`native/Launcher.Bootstrapper` — Win32 x64 asInvoker, статический CRT, Unicode и
+PerMonitorV2. Не использует WPF/.NET/WebView до выбора каталога. Один внешний EXE
+содержит uncompressed file payload и versioned hash-pinned binary index/footer;
+извлечение только в private уникальный staging выбранного тома. Native проверки
+ограничивают **extraction**, не заменяют решения Installation Coordinator.
+
+До создания staging требуется `FILE_PERSISTENT_ACLS` выбранного локального тома;
+FAT/exFAT отвергаются без fallback. `secureNamespace` проверяет owner/DACL каждого
+существующего родителя от корня тома и фактический opened handle. Неизвестные ACE,
+null DACL и права посторонних на запись/подмену namespace — fail-closed. Текущий SID,
+SYSTEM, Administrators и TrustedInstaller являются доверенными Windows authorities;
+payload root требует protected DACL только текущего SID/SYSTEM. Существующие ACL
+не исправляются автоматически, небезопасный выбранный каталог может быть отвергнут.
+Разрешается только создание посторонних siblings без права подмены существующих.
+Directory handles с `FILE_LIST_DIRECTORY` и без delete-sharing удерживают identity;
+metadata-only handles недостаточны. После extraction повторяются hash/size checks,
+все payload files удерживаются read-only handles без write/delete-sharing и namespace
+повторно проверяется перед `CreateProcessW`.
+Worker/retry используют исходный pinned bundle handle, а не повторно открывают
+путь внешнего EXE, который мог измениться после выбора каталога.
+
+`Launcher.InstallHelper` — self-contained non-single-file .NET helper, запускаемый
+native GUI с explicit HANDLE_LIST для stdin/stdout/stderr и read-only namespace/payload
+pins. Их OS-копии удерживаются helper до выхода, даже после crash/shutdown GUI.
+Trusted creation environment передаёт номера pins; helper проверяет их и снимает
+`HANDLE_FLAG_INHERIT` до catalog/Setup/launch, затем удаляет служебную переменную
+из своего environment. Pins не передаются далее в Launcher/Minecraft; недостоверная
+передача не допускает запуска Setup. Это не IPC/server-controlled executable option.
+Учтён Windows inheritance flag обычного `Process.Start`:
+[первичный исходник .NET10](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Diagnostics.Process/src/System/Diagnostics/Process.Windows.cs#L536).
+Stdout — исключительно
+bounded UTF8 NDJSON (32768 bytes), stderr — `helper.log` в staging. Неполная строка,
+invalid UTF8/schema/unknown/duplicate fields, nonce/SID/requestId mismatch и
+неожиданная response transition не дают успеха. Каждая команда несёт `v=1`, positive
+monotonic `id`, process nonce, `sid`, `command`; только preflight/install используют
+`baseDirectory`. Нет полей executable/hash/product/runtime command line.
+
+Команды: inspect → preflight → install (progress) → success → optional launch;
+helper поддерживает cancel/CTS, native GUI отменяет через EOF существующего stdin.
+Responses — inspection/preflight/progress/
+typed failure/success/launched. Native state machine требует ordered real Coordinator
+stages, но progress `Completed` **не** активирует успешный экран: необходим отдельный
+typed success с ожидаемыми App/GameData. Exit0/EOF/deadline не заменяют verification.
+Startup/preflight response deadline60s, install inactivity16min; эти UI deadlines
+закрывают IPC/cancel и **не** разрешают очистку intent/rollback или смену Storage Root.
+
+Единственный worker владеет stdin, выполняет все WriteFile и закрывает pipe; общие
+mutex не удерживаются во время pipe I/O. UI Close/Cancel/Escape сразу выставляет
+stop/shutdown без ожидания mutex или записи; UI Launch только публикует одноразовый
+atomic signal. Worker опрашивает его в reader и отправляет ровно одну launch5 после
+install3 success; дополнительных writer threads/неограниченной очереди нет.
+Закрытие всегда сигнализирует reader, включая активную установку, и не делает
+длительный join в UI. GUI остаётся жив до окончания worker; helper wait — 1s.
+При зависшем driver/I/O через 5s watchdog завершает **только native GUI** вместе с его
+потоками; нет detach, уничтожения app при живом worker, kill Setup/Minecraft или
+удаления intent. EOF сохраняет прежний helper cancellation/recovery contract.
+При активной установке EOF передаёт прежнюю CTS cancellation helper. GUI может
+завершиться до окончания helper/recovery; intent сохраняется, installer/game Job
+не завершаются GUI. При отказе создания watchdog timer завершается только GUI.
+Retry ожидает завершения старого worker асинхронно. Начальный exit code равен1,
+включая закрытие без первой попытки; только typed success последней попытки даёт0.
+Buttons закреплены снизу client area, при узком окне расположены вертикально;
+paths/status прокручиваются, MinTrackSize/WM_DPICHANGED ограничены monitor work area.
+
+Helper проверяет ordinary non-impersonated SID, parent PID/start ticks/session/token
+при startup и командах, использует Environment LocalAppData этого пользователя.
+Trusted catalog берётся только из payload, проверяет fixed compiled product и каждый
+file hash/size. При install используется прежний lease/intent/Job/completion backend.
+При launch helper повторно проверяет installation под lease, удерживает safe leaf
+EXE handle и освобождает lease **до** запуска для совместимости startup guard.
+Executable строго `<App>\current\MinecraftLauncher.exe`, без произвольных аргументов.
+
+EOF/GUI crash отменяет helper operation; crash самого helper остаётся под existing
+installation intent/Job recovery. Installer Job/Game Job и StorageRootResolver не
+переписаны. Query witness игрового Java Job и lifetime обоих режимов не меняются.
+Подмена executable/tree конкурентным злонамеренным процессом **того же пользователя**
+не объявляется новой security boundary; private ACL и no-reparse leaf checks не
+являются транзакционным filesystem snapshot. Неизвестное состояние fail closed.
+
+Diagnostic helper выбирает отдельный product/LocalData compile-time, без runtime
+production override. Каждый диагностический запуск имеет fresh GUID; только compiled
+diagnostic helper передаёт его VendorProbe и возвращает PID/start UTC ticks.
+Process creation не доказывает Main: host атомарно публикует immutable
+`launch-<GUID>.marker.json` с schema1/GUID/PID/start ticks после Main. Старые файлы
+не заменяются и не принимаются за новый запуск; harness ждёт exact match до 30s,
+timeout не разрешает cleanup intent. Production Launcher не получает diagnostic args.
+Tests/native console/diagnostic vendor host не входят в
+production bundle. Реальные E2E и release gates: [releasing.md](releasing.md).
+
+
+### Ранние diagnostic failures и NTFS root ACL (review 17.10.2026)
+
+Только compiled Diagnostic с `--smoke <base> <evidence> <launchId>` создаёт
+`failure.json`. Параметр evidence обозначает **новый** приватный leaf; его parent
+должен уже существовать. Все предки, включая корень тома, проверяются и удерживаются
+через прежний `secureNamespace(create=false)`. Leaf создаётся атомарно с protected
+DACL текущий SID/SYSTEM и проверяется по открытому handle. Existing leaf/collision,
+traversal, reparse, небезопасный owner/DACL и том без persistent ACL отвергаются.
+До завершения этой проверки запись evidence запрещена: отказ самой подготовки
+evidence, token/COM startup не обещает наличие файла и не использует fallback log.
+
+`failure.json` — flat UTF-8 schema1, максимум 16384 bytes. Общие поля:
+`schemaVersion`, `launchId` (32 lowercase hex), `stage`, `category`, `detail`.
+Stage — фиксированное имя операции; category — `namespace_acl` для typed ACL refusal,
+иначе `bootstrapper_error`. Detail — фиксированный текст из кода, без `what()`.
+ACL дополнительно содержит normalized `path` фактически проверенного каталога,
+`policy` (`directory_namespace` / `private_payload`), `rule`, числовые `allowedMask`
+(mapped generic rights) / `rejectedMask` и фиксированный `trustee`:
+`authenticated_users` либо `other_or_not_applicable`. Остальные SID, полный descriptor,
+helper messages, locator/file contents, environment, команды и токены не копируются.
+Путь может содержать имя пользователя; это локальное diagnostic evidence, не telemetry.
+Owner/DACL/inheritance/ACE/private-full-control отказы имеют отдельные rule codes.
+
+Worker записывает отказ до отправки GUI event, сохраняя исходную стадию даже при
+ошибке обработки события или закрытии окна. Startup после подготовки evidence и
+GUI exceptions используют тот же writer. `failure.json`, прежние `selection.bmp`,
+`preflight.bmp`, `success.bmp`, `failure.bmp`, `launched.bmp` и `launched.json`
+записываются только по фиксированным именам с `CREATE_NEW | FILE_FLAG_OPEN_REPARSE_POINT`,
+без share-write/delete; перед каждой записью повторяется audit pinned namespace.
+JSON/marker ограничены 16 KiB, bitmap — 32 MiB. Ошибка записи/flush/ACL recheck
+поглощается, исходный отказ установки сохраняется; existing evidence не заменяется.
+При short write/flush failure возможен неполный файл: evidence best effort,
+повторная попытка его не исправляет. Screenshots и Main marker contract сохранены.
+Production не получает writer/CLI override, ACL/install/helper/hash решения прежние.
+
+Исторический review до новых отчётов не выявил критической проблемы. По данным
+владельца, старый run `2eb6e67196fb42d2876f5aff153b08a1` на D: отказал до extraction.
+Для `Authenticated Users: Modify`, mask `0x001301BF`,
+пересечение с текущим namespace запретом равно `0x112`: `FILE_ADD_FILE/FILE_WRITE_DATA`,
+`FILE_WRITE_EA`, `FILE_WRITE_ATTRIBUTES`. Код сначала проверяет `D:\`, до создания
+`.launcher-install`; это согласуется с предполагаемым исключением
+`unsafe directory namespace ACL: D:\`. Точное исключение старого запуска не сохранено;
+на момент того review новая диагностика ещё не была испытана на этом томе.
+
+Дополнение по предоставленным отчётам домашних Windows10 испытаний сборки
+`970588dc`, документировано 17.10.2026: C: clean run
+`04f7041153da4f9181335a70c224a1c9` — PASS; D: negative run
+`3ff160b27f824ecc8325a4b83ce2e24d` — PASS с ожидаемым GUI exit1 и `failure.json`:
+`namespace_audit` / `namespace_acl`, path `D:\`, rule
+`untrusted_allow_rights_rejected`, trustee `authenticated_users`, allowedMask `1245631`,
+rejectedMask `274`. Это сообщение владельца, не самостоятельная проверка evidence
+на Debian; подробности и границы — [PROJECT_LEDGER.md](PROJECT_LEDGER.md).
+Отказ D: согласуется с текущим audit корня до staging и не доказывает возможность
+установки на этом томе. План оставшихся Cancel/Recovery испытаний —
+[releasing.md](releasing.md#план-оставшихся-windows-gui-e2e-cancel-и-recovery).
+
+Важно различать права: эта конкретная mask **не содержит** `FILE_DELETE_CHILD`,
+`WRITE_DAC`, `WRITE_OWNER`. Создание файлов в root само по себе не даёт записи в
+существующий private child. `DELETE` относится к объекту с ACE, а root volume
+не может быть переименован. См. Microsoft [directory rights](https://learn.microsoft.com/en-us/windows/win32/fileio/file-access-rights-constants)
+и [rename semantics](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information).
+
+Protected DACL останавливает [inheritance](https://learn.microsoft.com/en-us/windows/win32/secauthz/security-descriptor-control),
+но не доказывает безопасность всей цепочки parent→child. `DELETE` у child или
+`FILE_DELETE_CHILD` у parent может разрешить удаление/rename; `WRITE_DAC/WRITE_OWNER`
+позволяет изменить boundary. [MS-FSA access/sharing rules](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/82b364ce-6d7b-422f-8d88-4db32eea809a)
+описывают в том числе получение DELETE через parent. Обычный промежуточный каталог
+с Modify отличается от непереименовываемого volume root.
+
+No-delete handles с `FILE_LIST_DIRECTORY` защищают текущую модель от замены,
+а metadata-only pins недостаточны. Однако directory handles с `FILE_SHARE_WRITE`
+не блокируют изменение reparse data сами по себе: [MS-FSA FSCTL_SET_REPARSE_POINT](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/4aeefef8-92c3-4abc-af7a-a610caf8a165)
+проверяет `FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES`. Сейчас эти права у недоверенных
+SID запрещены ACL audit. Final-path/hash rechecks — наблюдения, а не атомарная
+транзакция последующих pathname operations. Handle сохраняет объект, но не всегда
+его имя после допустимого unlink/replacement; POSIX rename требует отдельного анализа.
+GUI→helper handle handoff закрывает lifetime gap только в рамках текущих предпосылок.
+
+| Вариант поддержки broad-root NTFS | Угрозы и ограничения |
+| --- | --- |
+| Сохранить текущую fail-closed политику | Наименьший риск; часть обычных data volumes отвергается. Рекомендуется для PR #14 |
+| Внешнее provision безопасного namespace администратором | Требует отдельного разрешения и изменения внешней конфигурации. Один private child не устраняет отказ root в текущем алгоритме |
+| Новая secure-anchor модель | Потенциально принимает именно root Modify без delete-child; нужны отдельный design и Windows adversarial tests. Исключение для буквы D: или пропуск root недостаточны |
+| Привилегированный broker/provisioner | Может создавать anchor, но добавляет привилегированную attack surface, ownership/recovery/deployment contracts |
+
+Будущий secure-anchor review должен доказать безопасное создание и переход от root
+к anchor, учитывать заранее открытые handles, collision и precreated trees, reparse,
+rename/delete/POSIX races, file/volume identity и открытия относительно pinned handles.
+Pins нужны на всё время операции и у helper, затем отдельные правила после выхода и
+reboot. Безопасное staging не доказывает безопасность конечных App/control/recovery/
+launch путей. Обязательны атаки другого непривилегированного SID на Windows10/11,
+concurrent rename/delete/reparse и явные границы same-SID/admin/SYSTEM/volume remapping.
+Эта новая модель в PR #14 не реализована; проверки `secureNamespace()` не ослаблены.

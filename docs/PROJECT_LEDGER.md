@@ -1,5 +1,179 @@
 # Единый журнал Minecraft Launcher
 
+> Windows GUI E2E и план Cancel/Recovery, снимок 17.10.2026 (UTC+05:00).
+> **READY FOR CANCEL/RECOVERY TEST PLANNING.** На DEV-SERVER (Debian) исходная и
+> итоговая ветка задачи — `feat/v061-gui-bootstrapper`; исходный HEAD и проверенная
+> Windows-сборка — [970588dc041cfb4d60da3980da2c9bd8bbbb6b93](https://github.com/lDiestrol/minecraft-launcher/commit/970588dc041cfb4d60da3980da2c9bd8bbbb6b93).
+> Рабочее дерево перед правками чистое. `git fetch origin` успешен; SSH origin
+> указывает тот же официальный репозиторий. `origin/main` —
+> `bd98ecd721298981508d54466d11089c1647ab4f`, `origin/feat/v0.6.1` —
+> `9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`; ветка задачи впереди них на 23/8 commits,
+> без отставания до документационного commit. GitHub подтвердил
+> [PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14): Open/Draft,
+> head `feat/v061-gui-bootstrapper`, base `feat/v0.6.1`, head SHA `970588dc` до правок.
+> Два реальных домашних Windows10 E2E зафиксированы **по предоставленным владельцем
+> E2E-отчётам**: C: Positive Clean — PASS, D: Negative ACL — PASS. Debian не запускал
+> Windows GUI/Setup и не проверял самостоятельно исходные Windows evidence.
+> Полные сообщённые результаты — раздел 12; архитектурный review и план всех семи
+> оставшихся сценариев — [releasing.md](releasing.md#план-оставшихся-windows-gui-e2e-cancel-и-recovery).
+> Изменения этой задачи ограничены Ledger, releasing и architecture; исходники,
+> builds, Windows ACL/HKCU, установки и прежние evidence не менялись. Один docs-only
+> commit и обычный push в существующую PR-ветку разрешены после review; опубликованный
+> commit определяется Git/историей PR, а `970588dc` остаётся SHA испытанной сборки.
+> Проверки документации и ограничения этой сессии перечислены в разделе 12;
+> прежние CI/build/test результаты ниже являются историческими и не повторялись.
+> Следующий рекомендуемый тест после отдельного разрешения — Cancel до начала
+> распаковки на изолированном Windows-стенде с исходными снимками данных/регистрации.
+> Приоритет покрытия — GameData, recovery и сохранность существующей установки.
+> Новые установки/E2E, диагностическая сборка, merge и release сейчас не разрешены.
+> Следующий блок — исторический снимок ранних diagnostic failures до этих отчётов.
+
+> PR #14: ранние diagnostic failures, 17.10.2026 (UTC+05:00), Debian13 x64.
+> Исходный HEAD `a663c336183fe4f06acc36cf1b174830d0c3b759` подтверждён Git/GitHub;
+> [PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14) Open/Draft,
+> head `feat/v061-gui-bootstrapper`, base `feat/v0.6.1`. HTTPS fetch через существующий
+> gh credential подтвердил origin/main `bd98ecd721298981508d54466d11089c1647ab4f` и
+> origin/feat/v0.6.1 `9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`. Настроенный SSH origin
+> указывает тот же официальный repo; SSH config/publickey на DEV-SERVER не исправлялись.
+> Diagnostic `--smoke` сохраняет controlled bounded failure.json, stage и typed ACL
+> path/policy/rule/masks в новом проверенном private evidence leaf. Fixed filenames,
+> pinned audited ancestors, protected DACL, CREATE_NEW, no reparse/traversal/adoption;
+> failures записи best effort без fallback/ослабления установки. Screenshots/markers
+> сохранены, их existing evidence тоже не перезаписывается. Production security
+> checks/ordinary token/helper/payload integrity не ослаблены.
+> Добавлены Windows regressions настоящего installWorker: unsafe ancestor, ACL category,
+> отсутствие staging/extraction/helper, JSON/schema/limits/no secret text, evidence
+> collision/locked target/changed ACL/reparse/traversal. Прежние native safety/lifecycle
+> suites выполняются в PR CI для обеих flavours на data-only NONEXECUTABLE fixture.
+> package-diagnostic безусловно отключён: новый packaged/downloadable Windows artifact
+> не разрешён. Разрешены commit/обычный push только в существующую PR ветку, без merge.
+> Debian: restore и full cross-build с EnableWindowsTargeting=true успешны, 0 warnings/
+> errors; portable xUnit156/156, full format verify, Python verifier11/11, fixture
+> hashes/index/no-overwrite, actionlint1.7.12 и58 local Markdown links успешны.
+> Windows [CI run38970215144](https://github.com/lDiestrol/minecraft-launcher/actions/runs/38970215144)
+> для implementation commit `b47ee1c71dddcd488e8616da06dbc5be943c7700` успешен:
+> Core494 + WPF19 =513/513, build0 warnings/errors, restore/format/feed и Python11/11;
+> native production178 / diagnostic180 checks, обе GUI lifecycle suites, новые
+> diagnostic71 checks прошли с MSVC /W4 /WX. package-diagnostic skipped, API artifacts=0.
+> Plain Debian restore требует Windows-targeting property; Debian cross-build не
+> заменяет Windows tests. Итоговый HEAD включает отдельную запись результатов;
+> актуальные SHA/status — [GitHub CI](https://github.com/lDiestrol/minecraft-launcher/actions/workflows/ci.yml).
+> Независимые architecture и code/security reviews в отдельном контексте: блокирующих
+> P0–P2 нет. Ограничения: short write/flush может оставить неполный evidence; startup/
+> window exception paths не покрыты отдельным интеграционным вызовом.
+> [Архитектурный анализ и варианты](architecture.md): AU Modify mask0x001301BF на D:\
+> пересекает текущий запрет в0x112, но не содержит FILE_DELETE_CHILD/WRITE_DAC/WRITE_OWNER.
+> Protected child не доказывает безопасность предков/identity; secure-anchor требует
+> отдельного design/Windows cross-user race tests и здесь не реализован.
+> По сообщению владельца C: GUI clean E2E пройден; D: run
+> `2eb6e67196fb42d2876f5aff153b08a1` отказал до payload. Точное исключение старого GUI
+> не сохранено; новый реальный GUI E2E не выполнялся. Установщик/Setup на DEV-SERVER
+> не запускались, Windows ACL и старые E2E результаты не менялись. Нет merge/release,
+> изменений main/feat/v0.6.1/release/v0.6.0. Следующий шаг после CI — отдельное решение
+> владельца о новом diagnostic artifact/E2E либо проектировании broad-root NTFS.
+> Ниже — исторические снимки предыдущих этапов.
+
+> Diagnostic packaging CI PR #14, 14.10.2026 (UTC+05:00), исходный HEAD
+> `ffcebc0afdbed96f5cd39541e55044721f7afeff`. Его Windows CI подтверждён:
+> [run38605070220](https://github.com/lDiestrol/minecraft-launcher/actions/runs/38605070220),
+> Core494 + App19 = 513/513, build0 warnings/errors, restore/format/feed tests успешны.
+> Добавлен отдельный `package-diagnostic` job после успешного `build-and-test`.
+> Допускается только same-repository PR #14, head `feat/v061-gui-bootstrapper`,
+> base `feat/v0.6.1`; checkout exact head SHA, проверяется ancestry исправления ffcebc0.
+> Существующий `package-diagnostic-bootstrapper.ps1` собирает только compiled Diagnostic:
+> `MinecraftLauncher.BootstrapperDiagnostic`, `VendorProbe.exe`, 0.0.1/dev, SDK/vpk161.
+> Новый data-only verifier сверяет native PE/diagnostic stub, compiled helper binding,
+> MCBOOT01 footer/index, SHA-256 всех embedded файлов, catalog/package identity и
+> SHA256SUMS. Никакой product EXE не запускается. Стандартный vpk CompatUtil161
+> проверен по source: проверка VelopackApp/SDK читает PE/IL, не запускает Main.
+> В Actions artifact сроком7 дней входят только `MinecraftLauncher-Setup.exe`,
+> `SHA256SUMS.txt`, `build-info.json` с точным source SHA и hash EXE.
+> Packaging/upload разрешены владельцем в существующей ветке PR; не Release/tag/merge.
+> Debian: actionlint1.7.12, Python verifier tests11/11, restore/full cross-build
+> (0 warnings/errors), full format verify, diff-check и47 local Markdown links успешны.
+> Независимый review в отдельном контексте: замечаний нет; Windows packaging на Debian
+> не выполнялся. Текущие HEAD, CI и доступность artifact определяются по Git/GitHub
+> [CI Actions](https://github.com/lDiestrol/minecraft-launcher/actions/workflows/ci.yml).
+> Получение artifact не подтверждает повторный Windows GUI E2E. Установку/удаление/
+> обновление не запускать; прежний E2E-стенд и пользовательские данные сохраняются.
+> Ниже — исторический снимок исправления verification перед diagnostic packaging CI.
+
+> Исправление verification PR #14, 14.10.2026 (UTC+05:00), Debian 13 x64.
+> Проверены GitHub/Open PR и исходный HEAD `d1d4dfdfe42806c40d2113d77e8f45eabcbda9aa`;
+> base `feat/v0.6.1` — `9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`, main — `bd98ecd`.
+> Работа изолирована в `/home/dev/projects/minecraft-launcher-pr14` на существующей
+> `feat/v061-gui-bootstrapper`; main/release/integration working files не изменяются.
+> По сообщению владельца, Windows10 GUI E2E успешно выполнил Setup161, но backend
+> отверг результат: `lib/app/Squirrel.exe` ошибочно искался в `App/current`.
+> Теперь точное сопоставление с `App/Update.exe` выполняется до общего `lib/app/`;
+> вложенный `tools/Squirrel.exe` остаётся обычным current-файлом. Размер/SHA-256,
+> trusted updater hash, reparse/containment, manifest/package/root, HKCU и все
+> exit/process/intent/receipt/completion условия сохранены.
+> Добавлены 27 синтетических regression cases; существующий Sandbox теперь содержит
+> пакетный Squirrel.exe. CI pull_request минимально расширен для base `feat/v0.6.1`.
+> Установлены официальный SDK 10.0.402 и локальный Debian ICU76 76.1-4 без sudo;
+> targeting/runtime/NuGet packs восстановлены обычным restore. Debian restore и full
+> cross-build (0 warnings/errors), portable xUnit156/156, full format verify и diff
+> прошли. Для format настроен CRLF только в PR worktree, массового tracked diff нет.
+> Новые Windows filesystem tests на Debian: 27 failed на Windows-only path guard;
+> App testhost aborted без WindowsDesktop runtime. Это ограничения ОС, не успешные
+> Windows-проверки. Независимый review в отдельном контексте: замечаний нет.
+> Владелец разрешил один fix commit и обычный push в существующий
+> [PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14), без merge/release.
+> Актуальные HEAD и результаты Windows CI — Git/GitHub и
+> [Actions](https://github.com/lDiestrol/minecraft-launcher/actions/workflows/ci.yml);
+> Linux cross-build не заменяет Windows test. Setup/GUI E2E, packaging, tags и release
+> в этой сессии не запускались. Повторный реальный Windows GUI E2E согласуется отдельно.
+> Следующие блоки — исторические снимки 12.10.2026 и более ранних этапов.
+
+> Lifecycle final fixes PR #14, 12.10.2026 (UTC+05:00), `feat/v061-gui-bootstrapper`.
+> NB-006/P2: UI не пишет stdin и не ждёт pipe mutex при Close/Cancel/Launch.
+> Единственный worker сериализует команды; Launch — одноразовый atomic signal,
+> Close сразу включает shutdown/watchdog, worker закрывает stdin по прежнему EOF/CTS
+> contract helper. Нет отдельной cancel frame, очереди потоков или очистки intent.
+> NB-007/P2: начальный exit1; exit0 только после verified typed success.
+> Свежие restore/build (0 errors/warnings), full xUnit486/486, отдельный crash10/10,
+> native178 production/180 diagnostic и 11 новых отдельных window/process cases
+> плюс прежний hung-helper/retry component прошли; format/diff/51 local links чистые.
+> Draft [PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14) остаётся
+> направлен в `feat/v0.6.1`; отдельный commit/push согласован владельцем.
+> Merge/release и ordinary-user GUI→helper→Coordinator→Setup E2E не выполнялись.
+> Ниже — исторический снимок предыдущего исправляющего коммита.
+
+> Review fixes PR #14, 12.10.2026 (UTC+05:00), та же `feat/v061-gui-bootstrapper`.
+> NB-001…NB-005 исправлены без изменений игрового Launcher/Coordinator/guardian,
+> StorageRootResolver и SDK161. Persistent ACL + проверенный pinned namespace,
+> helper-owned read pins без дальнейшего наследования; отдельный shutdown и bounded
+> GUI lifetime; результат последней подтверждённой попытки; адаптивный DPI layout;
+> diagnostic-only immutable GUID/PID/start marker после Main, не Process.Start ack.
+> Новый полный xUnit486/486 (20 новых), build0 errors/warnings, crash/recovery10/10;
+> native177 production/179 diagnostic checks + Win32 GUI lifecycle component,
+> format/diff/local links и изолированный production/diagnostic packaging чистые.
+> Подробности и границы доказательств — [releasing.md](releasing.md).
+> Публикация исправлений в существующий [Draft PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14)
+> согласована; HEAD определяется Git/GitHub, не собственным SHA в этом журнале.
+> Merge не выполняется, release-ready не объявляется. FAT/exFAT/cross-user/visual
+> ordinary-session GUI→Setup E2E ещё обязательны; EnableLUA=0 не обходился.
+> Ниже — исторические результаты первоначального PR и предыдущих этапов.
+
+> Новый этап, 12.10.2026 (UTC+05:00): PR #13 merged, verified origin/feat/v0.6.1
+> `9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`. От этой основы создана
+> `feat/v061-gui-bootstrapper`; main/release/v0.6.0 не изменяются.
+> Реализован Draft native GUI → self-contained helper → прежний Installation Coordinator
+> → Setup161. Полные гарантии, IPC, результаты и ограничения — [releasing.md](releasing.md)
+> и [architecture.md](architecture.md). Опубликован [Draft PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14)
+> из `feat/v061-gui-bootstrapper` в `feat/v0.6.1`; merge не выполнялся.
+> Новый полный прогон466/466, build0 errors/warnings; crash filter10/10, native48 checks;
+> format/release-feed tests/изолированный packaging успешны. Эти числа не означают
+> завершение Windows E2E: ordinary GUI smoke заблокирован host EnableLUA=0/elevated
+> token, отказ до staging подтверждён, политика безопасности не менялась.
+> Владелец согласовал manual smoke в обычном пользователе/VM после отчёта.
+> Нет доказательства clean installation C/D, vendor TEMP trace, реального Launcher
+> upgrade/shortcut/uninstall/crash E2E. Update fallback на C: остаётся нерешённым;
+> managed staging cleanup не реализован, retry сохраняет isolated artifacts.
+> Release-ready не объявляется. Дальнейший merge — только после независимого ревью
+> и согласования владельца. Следующие строки — исторические снимки предыдущих этапов.
+
 > GitHub-интеграция PR #10 и PR #11, 11.10.2026 (UTC+05:00).
 > [PR #10](https://github.com/lDiestrol/minecraft-launcher/pull/10) объединён обычным merge:
 > `cc30be0e1eb88262485aabb977d4e3f828e1ef84` в `feat/v0.6.1`.
@@ -506,6 +680,77 @@ code signing и срок; частые реальные диагностичес
 
 ## 11. Журнал работ
 
+12.10.2026: после final review устранены NB-006 и NB-007 в той же feature-ветке.
+`sendFromWorker` запрещён UI thread, stdin принадлежит одному worker; pipe I/O
+не выполняется под общим mutex. Close/Cancel/Escape выставляют stop/shutdown
+и включают bounded close без ожидания записи. EOF отменяет helper operation;
+native GUI не завершает Setup/Minecraft и не удаляет launch/installation state.
+Launch использует одноразовый atomic signal, повторные clicks игнорируются;
+дополнительных writer threads нет, IDs1/2/3/5 остаются сериализованными.
+Начальный outcome1 подтверждён реальным exit процесса для Close/Escape/Cancel
+без begin/finish/success. Ещё проверены error/success/launch failure, насыщенный
+pipe с WriteFile под занятым mutex, responsive UI, EOF cancellation, ordered launch
+и watchdog с неотменяемым wait (~5s). Sentinel проверяется целиком; hung fixture
+остаётся живым после выхода GUI, cleanup только через handle созданного тестом child.
+Assertions дочерних fixtures имеют отдельный exit99, а не ожидаемый product exit1.
+11 новых process cases плюс прежний retry/hung component прошли в обоих outputs.
+Restore/build0 errors/warnings; full486/486 и crash10/10; native178/180; format,
+diff-check и51 local links чистые. Первый Release test дал10 fixture failures:
+solution собрал отсутствующий в solution TestHost в Debug, а Release copy target
+не получил DLL. Явная Release-сборка Core.Tests/TestHost устранила подготовку;
+повторный full/crash зелёные, project files не менялись. Первый diagnostic native
+запуск ошибочно получил внутренний vendor Setup (payload absent); правильный outer
+bundle прошёл180 checks. Native suites используют существующие hash-pinned test
+bundles; новый release packaging не выполнялся. EnableLUA=0 подтверждён чтением,
+не менялся. GUI→Setup, visual/cross-user/FAT/exFAT gates по-прежнему открыты.
+NB-001/004/005, managed helper, Coordinator/Storage Root/guardian/game modes,
+SDK161, packaging/feed и пользовательские данные не менялись. Публикация отдельного
+fix в существующий Draft PR согласована; merge/tag/release запрещены.
+
+12.10.2026: по независимому review PR #14 устранены NB-001(P1), NB-002…NB-005(P2)
+и устаревшее описание GUI/IPC/helper в architecture. Проверяется реальный owner/DACL
+каждого родителя, volume persistent ACL, protected private root и no-reparse handles;
+directory pin содержит FILE_LIST_DIRECTORY (metadata-only не запрещал rename —
+это воспроизведено и исправлено). Payload/dependency hashes проверяются повторно,
+read pins переданы helper; перед Setup/launch он снимает дальнейшую inheritable flag.
+Неподходящий том/ACL отвергается без extraction/helper и fallback; чужие ACL не меняются.
+Shutdown reader отделён от cancel, helper wait1s и native-only watchdog5s; ни Setup,
+ни Minecraft не убиваются GUI, intent/locator не очищаются. Worker завершается до
+уничтожения app; retry/queued completion не вызывает длительный join или stale exit.
+Layout100/125/150/200%, footer/work-area/scrollable paths/errors проверены расчётами.
+Diagnostic Main публикует отдельный immutable `launch-<GUID>.marker.json` schema1
+с PID/start UTC ticks; harness сопоставляет с trusted creation evidence до30s.
+Обнаруженная гонка замены общего marker при открытом reader исключена отказом от
+общего заменяемого файла. Старые confirmations/unknown schema/PID/time не дают успех.
+Новые20 xUnit cases:14 marker +6 pin metadata/lifetime. Full486/486; native177/179
+и настоящий Win32 component WM_CLOSE с hung child, сохранением intent sentinel,
+release of parent pins/canary isolation и crash/recovery10/10. Component не запускает
+установку и не является обходом identity checks или GUI→Setup E2E.
+Изолированный diagnostic host с медленным Main и fresh repeat проверен отдельно;
+полный clean/retry/reinstall в обычном Windows-пользователе ещё не выполнен.
+FAT/exFAT rejection моделировался flags; ACL/rename/symlink/recheck/inheritance —
+реальные Win32 API. Cross-user/visual/high-DPI/full installed update остаются gates.
+SDK/версии/каналы/main/release/production/GameData/backup/VHDX не изменялись.
+Согласован отдельный fix commit и обычный push в тот же Draft PR, без merge.
+
+12.10.2026: native toolchain подготовлен по разрешению владельца из официального
+Microsoft installer: Build Tools2022 17.14.41, MSVC19.44.35229, linker14.44.35229,
+SDK/RC10.0.26100.0; C: до установки свободно417852006400 bytes, exit0 без reboot.
+Minimal /MT Win32 probe подтверждает UTF16/asInvoker; .NET SDK/Velopack не обновлялись.
+Fetch успешен, baseline PR13 подтверждён; новая отдельная GUI-ветка.
+Добавлены helper/protocol/catalog/native extraction/state machine, packaging wrapper,
+25 xUnit cases, native48 checks и developer-only diagnostic E2E harness.
+Изменение backend ограничено internal compiled product binding для отдельного
+diagnostic PackId; default product, Server/Singleplayer, Storage Root/Java guardian
+не меняются. Restore/build/full466/466/format/release-feed/package проверены заново.
+Прямой GUI и обычный Explorer invocation отказали с elevated-token до любых
+install writes; подтверждён EnableLUA=0. Никакие Windows security settings не менялись.
+Владелец согласовал внешний ordinary-session smoke; его результаты пока отсутствуют.
+Опубликован [Draft PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14)
+в `feat/v0.6.1` для независимого ревью с незакрытым E2E и fallback release gate,
+не для автоматического merge/релиза. Author Ivan/noreply согласован только для команд
+этого этапа, без изменения Git config. Полная проверка данных на D/VHDX не заявляется.
+
 | Дата (UTC+05:00) | Работа / свидетельство |
 | --- | --- |
 | 25.09.2026 | Initial repository и MVP-1: [36b1e73](https://github.com/lDiestrol/minecraft-launcher/commit/36b1e730338e123c922453bb6993f1bddf3f5b51), [664b6ed](https://github.com/lDiestrol/minecraft-launcher/commit/664b6ed551cc28488e46f97491f68b0a073cb2c1) |
@@ -557,6 +802,75 @@ SHA не дублируется в Ledger. Minecraft/Fabric smoke, installer/upd
 при начале интеграции. Последующий merge проверен перед SDK upgrade.
 
 ## 12. Последние проверки
+
+### Windows GUI E2E сборки 970588dc и документационный review, 17.10.2026
+
+Источник результатов — предоставленные владельцем E2E-отчёты реальных испытаний
+на домашнем Windows10. Дата этой записи — дата документирования; точное время
+самих запусков отдельно не предоставлено. Run ID связывает запись с отчётом,
+но не заменяет исходный evidence. На Debian исходные Windows evidence независимо
+не исследовались, новые GUI/Setup E2E не выполнялись. Оба результата относятся к
+[970588dc041cfb4d60da3980da2c9bd8bbbb6b93](https://github.com/lDiestrol/minecraft-launcher/commit/970588dc041cfb4d60da3980da2c9bd8bbbb6b93),
+а не к последующему docs-only HEAD и не к production Launcher E2E.
+
+**C: Positive Clean E2E — PASS (по отчёту владельца).**
+
+| Поле | Сообщённый результат |
+| --- | --- |
+| Run ID | `04f7041153da4f9181335a70c224a1c9` |
+| GUI exit code / Safe-script exit code | `0` / `0` |
+| Velopack | Установка успешна; App и GameData созданы |
+| Update.exe | Проверен, версия `1.2.161` |
+| VendorProbe.exe | Запущен один раз |
+| HKCU | Регистрация корректна |
+| Completion / receipt | Совпадают |
+| Сохранность | Production Launcher `0.5.0` и пользовательские данные сохранены |
+
+Указанная `0.5.0` — версия существующей установки на домашнем стенде по отчёту,
+не изменение stable-версии проекта `0.6.0`. Diagnostic VendorProbe подтверждает
+диагностический lifecycle, но не запуск Minecraft, настоящего WPF Launcher,
+его shortcuts или installed update stable→candidate.
+
+**D: Negative ACL E2E — PASS (по отчёту владельца).**
+
+| Поле | Сообщённый результат |
+| --- | --- |
+| Run ID | `3ff160b27f824ecc8325a4b83ce2e24d` |
+| GUI exit code | `1` — ожидаемый безопасный отказ |
+| Safe-script exit code | `0` — ожидаемый отказ корректно проверен скриптом |
+| failure.json | Создан |
+| stage / category | `namespace_audit` / `namespace_acl` |
+| path | `D:\` |
+| rule / trustee | `untrusted_allow_rights_rejected` / `authenticated_users` |
+| allowedMask / rejectedMask | `1245631` (`0x001301BF`) / `274` (`0x112`) |
+| Побочные эффекты | App, GameData и HKCU-регистрация не созданы |
+| Сохранность | Существующие установки и данные сохранены |
+
+Это подтверждённый отчётом fail-closed отказ на ACL корня D:, а не успешная
+установка на D:. Старый run `2eb6e67196fb42d2876f5aff153b08a1` и его неизвестное
+точное исключение остаются историей; новый run их evidence не заменяет.
+
+На Debian выполнен review кода native worker/Cancel/extraction, helper EOF/CTS,
+Coordinator, backend intent/receipt/completion/Job и существующего E2E harness.
+План в [releasing.md](releasing.md#план-оставшихся-windows-gui-e2e-cancel-и-recovery)
+содержит поведение, риски, предусловия, ожидаемые результаты, evidence,
+автоматизацию и отдельное разрешение для каждого сценария. P0 — сохранность
+GameData, Cancel во время Velopack и recovery; P1 — Cancel до/во время extraction,
+retry после отказа и повтор зарегистрированной установки. Сначала рекомендуется
+Cancel до распаковки; сохранность данных проверяется во всех последующих тестах.
+
+Документальные проверки этой сессии — PASS: Git/fetch/PR и сверка плана с кодом;
+структура Markdown (headings/fences, 36 tables), 74 внутренние ссылки с anchors,
+UTF-8/CRLF, семь сценариев × семь обязательных полей; scan добавленного diff на
+секреты/private addresses и ручной review scope/текста; `git diff --check` чистый.
+Изменены только три согласованных документа. Review допускает разрешённый один
+docs-only commit и обычный push в `feat/v061-gui-bootstrapper`; SHA этого снимка
+и факт его публикации определяются Git и историей PR #14.
+Build/test/format исходников не запускались: изменена только документация.
+Полноценный Markdown linter в окружении отсутствует; структурная проверка
+не заменяет его и не является Windows evidence validation.
+Незакрыты все семь новых сценариев, полный production E2E, Windows11 и прочие
+release gates. Статус: **READY FOR CANCEL/RECOVERY TEST PLANNING**, без merge/release.
 
 ### Исправления Installation Coordinator review, 12.10.2026
 
@@ -1168,17 +1482,27 @@ Guardian crash по-прежнему сообщает Launcher ошибку на
 
 ## 13. Следующие действия и миграция документов
 
-1. PR #10/#11/#12 merged; совместный game код ранее подтверждён владельцем smoke.
-   Installation Coordinator реализован отдельной feature-веткой от c5b1f66 для Draft review;
-   независимое code review и дальнейший merge требуют отдельного решения.
-2. Test-ветку a9f8642 и пользовательский VHDX сохранить. Main/release не изменять;
-   tags/Release/force push запрещены. После публикации Coordinator Draft PR остановиться.
-3. Следующий **отдельно согласуемый** этап — русский native GUI/managed helper IPC,
-   trusted catalog/extraction выбранного тома; ещё отдельно updater fail-closed fallback,
-   legacy App adoption и installed v0.6.0 update. Проверить clean D:/почти полный C:,
-   packaging/uninstall/reinstall с сохранностью worlds/settings. Не считать текущий PoC release E2E.
+Актуальный порядок для PR #14 на 17.10.2026:
+
+1. Сохранить исходные Windows evidence и существующие установки; два отчёта для
+   `970588dc` зафиксированы в разделе 12. Новые испытания в этой задаче не выполняются.
+2. После отдельного разрешения начать с Cancel до распаковки по
+   [плану E2E](releasing.md#план-оставшихся-windows-gui-e2e-cancel-и-recovery), затем
+   extraction Cancel; переход к Velopack Cancel/recovery — только с изолированным
+   snapshot и согласованными целями прерывания. GameData проверять на каждом шаге.
+3. PR #14 остаётся Draft; merge, новая сборка и release требуют отдельного решения.
+   Main, `feat/v0.6.1`, `release/v0.6.0` не изменять. Остальные release gates и
+   SDK update fallback остаются открытыми, диагностический PASS их не закрывает.
 4. UI/UX/RAM/ping — v0.6.2; Storage Manager — v0.6.3; несколько источников — v0.7.0.
-   Старые status/roadmap/handoff не удаляются, Pack Manager независим.
+   Pack Manager независим. Исторический план до GUI/Coordinator в журнале
+   не является указанием заново реализовывать завершённые этапы.
+
+Исторический порядок до реализации GUI (11.10.2026): после merged PR #10/#11/#12
+Coordinator был отдельной feature-веткой от c5b1f66 для Draft review; следующим
+предлагался native GUI/managed helper IPC и trusted catalog/extraction. Эти этапы
+уже отражены в последующих снимках PR #13/#14. Эталонную test-ветку a9f8642 и
+пользовательский VHDX сохранять; updater fallback/legacy adoption/installed update
+не считать завершёнными по диагностическому PoC.
 
 Информация [PROJECT_STATUS.md](PROJECT_STATUS.md), [ROADMAP.md](ROADMAP.md) и
 [AI_HANDOFF.md](AI_HANDOFF.md) перенесена по смыслу: release/state/storage/ограничения —
