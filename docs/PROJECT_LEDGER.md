@@ -1,5 +1,33 @@
 # Единый журнал Minecraft Launcher
 
+> Windows GUI E2E и план Cancel/Recovery, снимок 17.10.2026 (UTC+05:00).
+> **READY FOR CANCEL/RECOVERY TEST PLANNING.** На DEV-SERVER (Debian) исходная и
+> итоговая ветка задачи — `feat/v061-gui-bootstrapper`; исходный HEAD и проверенная
+> Windows-сборка — [970588dc041cfb4d60da3980da2c9bd8bbbb6b93](https://github.com/lDiestrol/minecraft-launcher/commit/970588dc041cfb4d60da3980da2c9bd8bbbb6b93).
+> Рабочее дерево перед правками чистое. `git fetch origin` успешен; SSH origin
+> указывает тот же официальный репозиторий. `origin/main` —
+> `bd98ecd721298981508d54466d11089c1647ab4f`, `origin/feat/v0.6.1` —
+> `9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`; ветка задачи впереди них на 23/8 commits,
+> без отставания до документационного commit. GitHub подтвердил
+> [PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14): Open/Draft,
+> head `feat/v061-gui-bootstrapper`, base `feat/v0.6.1`, head SHA `970588dc` до правок.
+> Два реальных домашних Windows10 E2E зафиксированы **по предоставленным владельцем
+> E2E-отчётам**: C: Positive Clean — PASS, D: Negative ACL — PASS. Debian не запускал
+> Windows GUI/Setup и не проверял самостоятельно исходные Windows evidence.
+> Полные сообщённые результаты — раздел 12; архитектурный review и план всех семи
+> оставшихся сценариев — [releasing.md](releasing.md#план-оставшихся-windows-gui-e2e-cancel-и-recovery).
+> Изменения этой задачи ограничены Ledger, releasing и architecture; исходники,
+> builds, Windows ACL/HKCU, установки и прежние evidence не менялись. Один docs-only
+> commit и обычный push в существующую PR-ветку разрешены после review; опубликованный
+> commit определяется Git/историей PR, а `970588dc` остаётся SHA испытанной сборки.
+> Проверки документации и ограничения этой сессии перечислены в разделе 12;
+> прежние CI/build/test результаты ниже являются историческими и не повторялись.
+> Следующий рекомендуемый тест после отдельного разрешения — Cancel до начала
+> распаковки на изолированном Windows-стенде с исходными снимками данных/регистрации.
+> Приоритет покрытия — GameData, recovery и сохранность существующей установки.
+> Новые установки/E2E, диагностическая сборка, merge и release сейчас не разрешены.
+> Следующий блок — исторический снимок ранних diagnostic failures до этих отчётов.
+
 > PR #14: ранние diagnostic failures, 17.10.2026 (UTC+05:00), Debian13 x64.
 > Исходный HEAD `a663c336183fe4f06acc36cf1b174830d0c3b759` подтверждён Git/GitHub;
 > [PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14) Open/Draft,
@@ -775,6 +803,75 @@ SHA не дублируется в Ledger. Minecraft/Fabric smoke, installer/upd
 
 ## 12. Последние проверки
 
+### Windows GUI E2E сборки 970588dc и документационный review, 17.10.2026
+
+Источник результатов — предоставленные владельцем E2E-отчёты реальных испытаний
+на домашнем Windows10. Дата этой записи — дата документирования; точное время
+самих запусков отдельно не предоставлено. Run ID связывает запись с отчётом,
+но не заменяет исходный evidence. На Debian исходные Windows evidence независимо
+не исследовались, новые GUI/Setup E2E не выполнялись. Оба результата относятся к
+[970588dc041cfb4d60da3980da2c9bd8bbbb6b93](https://github.com/lDiestrol/minecraft-launcher/commit/970588dc041cfb4d60da3980da2c9bd8bbbb6b93),
+а не к последующему docs-only HEAD и не к production Launcher E2E.
+
+**C: Positive Clean E2E — PASS (по отчёту владельца).**
+
+| Поле | Сообщённый результат |
+| --- | --- |
+| Run ID | `04f7041153da4f9181335a70c224a1c9` |
+| GUI exit code / Safe-script exit code | `0` / `0` |
+| Velopack | Установка успешна; App и GameData созданы |
+| Update.exe | Проверен, версия `1.2.161` |
+| VendorProbe.exe | Запущен один раз |
+| HKCU | Регистрация корректна |
+| Completion / receipt | Совпадают |
+| Сохранность | Production Launcher `0.5.0` и пользовательские данные сохранены |
+
+Указанная `0.5.0` — версия существующей установки на домашнем стенде по отчёту,
+не изменение stable-версии проекта `0.6.0`. Diagnostic VendorProbe подтверждает
+диагностический lifecycle, но не запуск Minecraft, настоящего WPF Launcher,
+его shortcuts или installed update stable→candidate.
+
+**D: Negative ACL E2E — PASS (по отчёту владельца).**
+
+| Поле | Сообщённый результат |
+| --- | --- |
+| Run ID | `3ff160b27f824ecc8325a4b83ce2e24d` |
+| GUI exit code | `1` — ожидаемый безопасный отказ |
+| Safe-script exit code | `0` — ожидаемый отказ корректно проверен скриптом |
+| failure.json | Создан |
+| stage / category | `namespace_audit` / `namespace_acl` |
+| path | `D:\` |
+| rule / trustee | `untrusted_allow_rights_rejected` / `authenticated_users` |
+| allowedMask / rejectedMask | `1245631` (`0x001301BF`) / `274` (`0x112`) |
+| Побочные эффекты | App, GameData и HKCU-регистрация не созданы |
+| Сохранность | Существующие установки и данные сохранены |
+
+Это подтверждённый отчётом fail-closed отказ на ACL корня D:, а не успешная
+установка на D:. Старый run `2eb6e67196fb42d2876f5aff153b08a1` и его неизвестное
+точное исключение остаются историей; новый run их evidence не заменяет.
+
+На Debian выполнен review кода native worker/Cancel/extraction, helper EOF/CTS,
+Coordinator, backend intent/receipt/completion/Job и существующего E2E harness.
+План в [releasing.md](releasing.md#план-оставшихся-windows-gui-e2e-cancel-и-recovery)
+содержит поведение, риски, предусловия, ожидаемые результаты, evidence,
+автоматизацию и отдельное разрешение для каждого сценария. P0 — сохранность
+GameData, Cancel во время Velopack и recovery; P1 — Cancel до/во время extraction,
+retry после отказа и повтор зарегистрированной установки. Сначала рекомендуется
+Cancel до распаковки; сохранность данных проверяется во всех последующих тестах.
+
+Документальные проверки этой сессии — PASS: Git/fetch/PR и сверка плана с кодом;
+структура Markdown (headings/fences, 36 tables), 74 внутренние ссылки с anchors,
+UTF-8/CRLF, семь сценариев × семь обязательных полей; scan добавленного diff на
+секреты/private addresses и ручной review scope/текста; `git diff --check` чистый.
+Изменены только три согласованных документа. Review допускает разрешённый один
+docs-only commit и обычный push в `feat/v061-gui-bootstrapper`; SHA этого снимка
+и факт его публикации определяются Git и историей PR #14.
+Build/test/format исходников не запускались: изменена только документация.
+Полноценный Markdown linter в окружении отсутствует; структурная проверка
+не заменяет его и не является Windows evidence validation.
+Незакрыты все семь новых сценариев, полный production E2E, Windows11 и прочие
+release gates. Статус: **READY FOR CANCEL/RECOVERY TEST PLANNING**, без merge/release.
+
 ### Исправления Installation Coordinator review, 12.10.2026
 
 Работа в существующей feat/v061-install-coordinator от исходного PR #13 HEAD94f1971,
@@ -1385,17 +1482,27 @@ Guardian crash по-прежнему сообщает Launcher ошибку на
 
 ## 13. Следующие действия и миграция документов
 
-1. PR #10/#11/#12 merged; совместный game код ранее подтверждён владельцем smoke.
-   Installation Coordinator реализован отдельной feature-веткой от c5b1f66 для Draft review;
-   независимое code review и дальнейший merge требуют отдельного решения.
-2. Test-ветку a9f8642 и пользовательский VHDX сохранить. Main/release не изменять;
-   tags/Release/force push запрещены. После публикации Coordinator Draft PR остановиться.
-3. Следующий **отдельно согласуемый** этап — русский native GUI/managed helper IPC,
-   trusted catalog/extraction выбранного тома; ещё отдельно updater fail-closed fallback,
-   legacy App adoption и installed v0.6.0 update. Проверить clean D:/почти полный C:,
-   packaging/uninstall/reinstall с сохранностью worlds/settings. Не считать текущий PoC release E2E.
+Актуальный порядок для PR #14 на 17.10.2026:
+
+1. Сохранить исходные Windows evidence и существующие установки; два отчёта для
+   `970588dc` зафиксированы в разделе 12. Новые испытания в этой задаче не выполняются.
+2. После отдельного разрешения начать с Cancel до распаковки по
+   [плану E2E](releasing.md#план-оставшихся-windows-gui-e2e-cancel-и-recovery), затем
+   extraction Cancel; переход к Velopack Cancel/recovery — только с изолированным
+   snapshot и согласованными целями прерывания. GameData проверять на каждом шаге.
+3. PR #14 остаётся Draft; merge, новая сборка и release требуют отдельного решения.
+   Main, `feat/v0.6.1`, `release/v0.6.0` не изменять. Остальные release gates и
+   SDK update fallback остаются открытыми, диагностический PASS их не закрывает.
 4. UI/UX/RAM/ping — v0.6.2; Storage Manager — v0.6.3; несколько источников — v0.7.0.
-   Старые status/roadmap/handoff не удаляются, Pack Manager независим.
+   Pack Manager независим. Исторический план до GUI/Coordinator в журнале
+   не является указанием заново реализовывать завершённые этапы.
+
+Исторический порядок до реализации GUI (11.10.2026): после merged PR #10/#11/#12
+Coordinator был отдельной feature-веткой от c5b1f66 для Draft review; следующим
+предлагался native GUI/managed helper IPC и trusted catalog/extraction. Эти этапы
+уже отражены в последующих снимках PR #13/#14. Эталонную test-ветку a9f8642 и
+пользовательский VHDX сохранять; updater fallback/legacy adoption/installed update
+не считать завершёнными по диагностическому PoC.
 
 Информация [PROJECT_STATUS.md](PROJECT_STATUS.md), [ROADMAP.md](ROADMAP.md) и
 [AI_HANDOFF.md](AI_HANDOFF.md) перенесена по смыслу: release/state/storage/ограничения —

@@ -159,7 +159,7 @@ ACL/rename/symlink/recheck/read-pin inheritance/canary — настоящие Wi
 
 ### Diagnostic failures и CI без packaging, 17.10.2026
 
-В рамках текущей задачи `package-diagnostic` **безусловно отключён** в
+На этапе diagnostic failures `package-diagnostic` **безусловно отключён** в
 [ci.yml](../.github/workflows/ci.yml). Возврат packaging/upload требует отдельного
 разрешения владельца. Обычный PR CI выполняет .NET tests/format и обе native flavours
 `/W4 /WX`, прежние native safety/lifecycle tests и новые diagnostic worker/evidence
@@ -179,11 +179,17 @@ rule/masks; полный контракт и ограничения — [archite
 flush может оставить неполный файл. Startup до создания проверенного evidence не
 использует `startup-error.log` или иной fallback на непроверенный путь.
 
-По сообщению владельца Windows10 clean E2E на C: пройден. Повторный D: run
-`2eb6e67196fb42d2876f5aff153b08a1` завершился до extraction; найденный AU Modify
-root ACL объясняет fail-closed поведение. Точное exception detail старого запуска
-не доказано. Новый E2E и создание diagnostic artifact требуют отдельного разрешения;
-старые E2E результаты, Windows ACL и пользовательские данные в этой задаче не меняются.
+Исторически, до новых отчётов, владелец сообщил об успешном C: clean E2E и D: run
+`2eb6e67196fb42d2876f5aff153b08a1` с отказом до extraction; точное exception detail
+того запуска не сохранено. Предоставленные позднее отчёты домашних Windows10 E2E
+сборки `970588dc` документированы 17.10.2026 в
+[PROJECT_LEDGER.md](PROJECT_LEDGER.md): C: Positive Clean — PASS, run
+`04f7041153da4f9181335a70c224a1c9`; D: Negative ACL — PASS, run
+`3ff160b27f824ecc8325a4b83ce2e24d`, `namespace_audit` / `namespace_acl` на `D:\`.
+Это внешний результат по отчётам владельца; Debian самостоятельно Windows evidence
+не проверял. Diagnostic PASS не закрывает production/recovery/release gates.
+Новые E2E и создание diagnostic artifact требуют отдельного разрешения;
+старые evidence, Windows ACL и пользовательские данные сохраняются.
 
 ### Исторический diagnostic artifact в Windows CI, 14.10.2026
 
@@ -250,6 +256,173 @@ production outer EXE в этом harness. Пользователю обычно�
 Тестовый VHDX `D:` не detach/resize; `D:\MinecraftLauncher\GameData`, backing VHDX,
 backup и пользовательский locator не изменялись. C: backing файла означает, что D:
 не доказывает почти заполненный C:. Disk-full, отказ ACL и detach — только disposable VM.
+
+### План оставшихся Windows GUI E2E: Cancel и Recovery
+
+План подготовлен 17.10.2026 по коду сборки `970588dc`; новые сценарии **не выполнены**.
+Статус — **READY FOR CANCEL/RECOVERY TEST PLANNING**. Приоритет P0 означает
+необходимое покрытие безопасности данных/recovery, P1 — остальные обязательные
+проверки этого плана; безопасный порядок исполнения начинается с простого Cancel.
+Результаты двух переданных Windows10 запусков и происхождение сведений — в
+[Ledger](PROJECT_LEDGER.md). Все реальные действия ниже требуют отдельного
+разрешения владельца: эта задача разрешает документацию, один docs-only commit/push,
+но не установки, Cancel/fault injection, ACL/HKCU changes, новую сборку или release.
+
+#### Основания review и общие условия
+
+Проверены [native worker/GUI](../native/Launcher.Bootstrapper/main.cpp),
+[extraction](../native/Launcher.Bootstrapper/storage.h),
+[helper](../src/Launcher.InstallHelper/Program.cs),
+[Coordinator](../src/Launcher.Infrastructure/Installation/InstallationCoordinator.cs),
+[backend](../src/Launcher.Infrastructure/Installation/WindowsInstallationBackend.cs),
+[intent store](../src/Launcher.Infrastructure/Installation/InstallationIntentStore.cs)
+и [Job](../src/Launcher.Infrastructure/Installation/WindowsInstallationJob.cs).
+Контракты описаны в [architecture.md](architecture.md); наблюдаемое поведение
+реального Velopack после прерывания остаётся предметом будущих E2E.
+
+- Cancel/Close/Escape выставляет native stop/shutdown; extraction проверяет stop
+  между файлами и 64 KiB блоками. У helper отмена передаётся EOF stdin → CTS.
+  GUI ждёт helper ограниченно; watchdog около 5s завершает только GUI. Исчезновение
+  окна не доказывает завершение helper/Job и не разрешает удаление intent.
+- Backend при отмене во время ожидания Setup прекращает только созданный installer
+  Job. Откат App/HKCU не гарантирован: частичные App, регистрация, locator и pending
+  intent могут остаться. Новые Launcher/guardian sessions блокируются pending gate.
+- Recover под exclusive lease проверяет owner PID/start time, точную связь
+  intent/receipt, пути/package и Job. Живой чужой owner, активный Job, denied/unknown/
+  corrupt state блокируют recovery; missing Job допустим только для install-contract1.
+  Gate снимается только через Complete после проверки App/HKCU/completion, не по
+  таймауту. Crash до completion требует Setup retry; после matching completion и
+  всех повторных проверок возможен verified retry без Setup.
+- Поздний Cancel может проиграть завершению Setup: после последнего ожидания
+  backend не проверяет CTS перед verification/completion. Если успех уже достоверно
+  опубликован, полный результат может сохраниться. GUI closing игнорирует события,
+  поэтому exit1 сам по себе не доказывает отсутствие completion. Требуется точная
+  временная привязка; прогон без попадания в целевую фазу не засчитывать как её PASS.
+
+Будущий стенд: ordinary Windows10 user с UAC, отдельная disposable VM/профиль,
+проверенный безопасный NTFS namespace и достаточно места; только уже имеющийся
+проверенный compiled Diagnostic artifact с source SHA/build-info/SHA256SUMS.
+Старый D: ACL не исправлять ради теста. Production Launcher 0.5.0, исходные пользовательские
+GameData, старые evidence и VHDX не использовать для fault injection. Предварительно
+сохранить snapshot VM и восстановимую копию тестовых GameData/Control; точные targets
+и разрешённые действия согласовать до запуска. Snapshot не заменяет сохранение evidence.
+
+Обязательный комплект **E** для каждого будущего запуска: версия ОС/обычный token,
+source SHA и hash outer EXE, product/catalog, уникальный run/launch ID, время действий
+и подтверждение достигнутой фазы, GUI/script exit codes с отдельными критериями
+safe-script, screenshots/видео, дерево процессов с PID/start time и Job-состоянием,
+helper/setup logs при их наличии. До/после — список и SHA-256 тестовых App/Update,
+GameData (worlds/settings/user files), locator, intent/receipt/completion и снимки
+соответствующих diagnostic и production uninstall keys HKCU (read-only, с типами
+значений). Отсутствующие объекты фиксировать явно; результат после GUI exit снимать
+также после прекращения установочных writes. Для успешного launch нужны fresh
+`launched.json` и Main marker с совпадающими GUID/PID/start ticks; это не требование
+к отменённому запуску, где VendorProbe не ожидается. Не публиковать частные пути/данные
+из локальных отчётов; существующие evidence не удалять и не перезаписывать.
+
+Ограничения автоматизации: текущий [BootstrapperE2E.ps1](../tests/BootstrapperE2E.ps1)
+делает clean→retry и opt-in uninstall/reinstall, но при **начальном** наличии
+диагностической регистрации останавливается; это не универсальный safe-script из
+переданных отчётов. Он не имеет phase-triggered Cancel/crash режима. Diagnostic
+`--smoke` автоматически начинает install, запускает VendorProbe после success и
+закрывает GUI после failure: интерактивный Retry в этом режиме не проверяется.
+До отдельного согласования harness нельзя считать готовым для сценариев ниже.
+Control расположен рядом с diagnostic outer EXE: повтор/recovery должны сохранять
+его исходное расположение и прежний Control; перемещение EXE создаст иной профиль.
+Evidence leaf для каждого процесса — новый, под существующим проверенным parent;
+его не создавать заранее. Hooks/изменение исходников/новая сборка этим планом не разрешены.
+
+#### 1. Cancel до начала распаковки — P1, следующий рекомендуемый тест
+
+| Аспект | План |
+| --- | --- |
+| Проверяемое поведение | Open→Cancel/Close/Escape до нажатия Install; отдельно Cancel после Install, если наблюдением доказано, что extraction ещё не началась. UI отвечает и закрывается без запуска helper/Setup. |
+| Риски файлов и HKCU | В первом варианте ожидается отсутствие install writes. После Install могут успеть появиться выбранный base, `.launcher-install` и пустой private bootstrap leaf; не требовать их автоматического удаления. Ранняя гонка может перейти в extraction — тогда классифицировать как сценарий 2. |
+| Предусловия | Общий стенд и E-before; новый target без App/GameData/регистрации. Для ручного Open→Close не использовать auto-install `--smoke`; способ UI-наблюдения согласовать заранее. |
+| Ожидаемый результат | GUI exit1; helper/Setup/VendorProbe не запускались, App/GameData/locator/intent/receipt/completion и HKCU не созданы, существующие установки/данные сохранены. Диагностический evidence leaf допустим. |
+| Evidence | E + запись момента Cancel и отсутствия process creation/extraction; внешний screenshot до закрытия. `failure.json` не обязателен при закрытии без worker. |
+| Автоматизация | Open→Close безопасно автоматизировать UI-средством в VM после разрешения. Узкое окно между Install и extraction нельзя надёжно поймать sleep; без подтверждения фазы оставить этот вариант непроверенным. |
+| Отдельное разрешение | Да, на конкретный Windows GUI запуск; вариант после Install также разрешает создание тестового staging. |
+
+#### 2. Cancel во время извлечения payload — P1
+
+| Аспект | План |
+| --- | --- |
+| Проверяемое поведение | Cancel при фактической записи payload; native worker прекращает extraction и не передаёт неполный payload helper. Проверить Close/Escape как эквивалентные пути отдельно при необходимости. |
+| Риски файлов и HKCU | Частичный payload остаётся в уникальном bootstrap staging; cleanup не предусмотрен. Race после extraction может уже запустить helper — такой прогон не доказывает отмену внутри extraction. |
+| Предусловия | Сценарий 1, snapshot VM, E-before, разрешённый пустой base. Нужен наблюдаемый write trace/размер незавершённого файла; не замедлять стенд изменением ACL/порчей artifact. |
+| Ожидаемый результат | Для доказанной фазы — exit1, только частичный staging, без helper/Setup/VendorProbe, без App/GameData/locator/install records/HKCU changes. Следующая разрешённая попытка использует новый bootstrap GUID, старый staging сохранён. |
+| Evidence | E + запись writes до Cancel, границы времени и список частичных файлов после; отсутствие helper/Setup process creation. `failure.json` при наличии имеет extraction stage; отсутствие best-effort evidence не доказывает успех. |
+| Автоматизация | Условно: UI Cancel после наблюдаемой записи, затем независимая проверка попадания в фазу. Существующие component extraction tests не заменяют реальный GUI прогон; при слишком быстрой extraction нужен отдельный design harness. |
+| Отдельное разрешение | Да, на extraction/Cancel и оставляемые staging files; retry — отдельная явно включённая часть разрешения. |
+
+#### 3. Cancel во время работы Velopack — P0
+
+| Аспект | План |
+| --- | --- |
+| Проверяемое поведение | Отмена при подтверждённом активном Setup/Job: GUI закрывает IPC, helper получает EOF/CTS, backend прекращает своё installer tree. Зафиксировать завершение helper/Job после GUI exit. |
+| Риски файлов и HKCU | Velopack может успеть записать часть App и HKCU. Locator/GameData и intent/receipt уже могут существовать; rollback/удаление не ожидаются. Повторная установка не должна начаться поверх живого Job. |
+| Предусловия | Сценарии 1–2 и read-only preservation baseline; disposable VM snapshot, точные diagnostic PID/start times/targets; прежняя production установка исключена из Job. Подготовленный наблюдатель фаз, без process-name-wide kill. |
+| Ожидаемый результат | При попадании в активное ожидание Setup — GUI exit1, только owned Job прекращается, автоматического VendorProbe launch и ложного typed success нет; pending gate сохраняет незавершённую операцию. Частичный App/HKCU допускается только как незавершённое состояние. При гонке с verified completion классифицировать результат отдельно по timeline. GameData/production сохранены. |
+| Evidence | E + Setup process creation, Job membership/ActiveProcesses до Cancel и после rundown, EOF/cancellation по доступным logs, сохранённые records и HKCU diff. Нельзя выводить Job inactivity только из исчезновения окна/Setup PID. |
+| Автоматизация | Только условно безопасна в VM с точной идентификацией процессов и phase observer. Слепой timer и kill по имени не подходят; готового реального Cancel-Setup harness нет. |
+| Отдельное разрешение | Да, отдельно на прерывание diagnostic Velopack и возможные частичные App/HKCU writes, затем отдельно на recovery/retry. |
+
+#### 4. Recovery после прерывания установки — P0
+
+| Аспект | План |
+| --- | --- |
+| Проверяемое поведение | Отдельные варианты: штатный Cancel из 3; crash GUI; crash helper до Setup и при живом installer Job; interruption после Setup до completion и после completion до Complete. Повтор с тем же base/package/Control сначала проверяет lease/owner/Job и связь записей. |
+| Риски файлов и HKCU | Установочное дерево может пережить helper благодаря witness; ранний retry опасен. Crash между intent и receipt может оставить несовпадение, которое требует fail-closed остановки. Нельзя вручную удалять/править records, HKCU или «чинить» App для продолжения. |
+| Предусловия | Сначала 3, затем отдельный VM snapshot для каждой crash-фазы, точный план fault injection с PID/start time. Старые snapshots/evidence сохранить; без наблюдаемой границы completion узкий crash-вариант не засчитывается. |
+| Ожидаемый результат | Живой owner/Job — Busy/отказ без второго Setup; corrupt/unknown/несвязанные records — безопасная остановка. После доказанного rundown и при валидной связке recovery сохраняет gate до verified Complete. До completion повторяет Setup; после matching completion + valid App/HKCU допускает success без Setup. Ни timeout, ни полный App сами по себе не снимают gate. GameData/production сохранены. |
+| Evidence | E для прерванной и повторной попыток, процессная/Job timeline, snapshots intent/receipt/completion до/после, Setup count и файлы/HKCU. Подтверждение, что новый Launcher/guardian startup не проходит pending gate; на diagnostic стенде учитывать отдельный профиль, не запускать production Launcher ради этой проверки. |
+| Автоматизация | Частично: существующие crash tests используют test host и simulated completion, не реальный Velopack. Реальный recovery требует VM, согласованного phase observer/fault harness; неизвестные metadata оставлять нетронутыми для review. |
+| Отдельное разрешение | Да, на каждую crash-фазу и точный процесс, повторную установку и любые test startup проверки. Reboot/power loss — отдельное последующее разрешение, не подразумевается. |
+
+#### 5. Retry после безопасного отказа — P1
+
+| Аспект | План |
+| --- | --- |
+| Проверяемое поведение | После D:-подобного namespace отказа повтор в том же небезопасном месте снова отказывает. Отдельно — выбор заранее проверенного безопасного C: target без изменения ACL и retry после полностью завершённого старого worker/helper. |
+| Риски файлов и HKCU | Ранняя попытка не должна создать App/GameData/HKCU; успешная повторная создаёт только diagnostic установку. Нельзя ослаблять ACL D: или принимать оставшийся staging за доверенный payload. |
+| Предусловия | E и отказ с точной категорией; отсутствие другой diagnostic регистрации, новый safe target, сохранённый Control. Для `--smoke` это новый процесс с новым launch ID/evidence; интерактивную кнопку Retry проверять отдельно без auto-close режима. |
+| Ожидаемый результат | На прежнем unsafe target — exit1 и тот же безопасный отказ. На safe target — свежий bootstrap GUID, повторная проверка hashes/namespace, success только после App/HKCU/completion, exit0; при разрешённом launch один fresh VendorProbe marker. Предыдущие evidence и production сохранены. |
+| Evidence | E для обеих попыток, failure.json, worker/helper rundown, связь выбранных targets с phases, различие staging GUID/launch IDs, Setup/launch counts и полные success records. |
+| Автоматизация | Возможно в VM после согласования harness для expected failure/new-process retry. Имеющийся generic E2E script ожидает успех и не реализует такой отрицательный сценарий; UI Retry требует отдельного управления. |
+| Отдельное разрешение | Да, на отрицательный повтор и последующую diagnostic установку/launch; изменение ACL не требуется и не разрешается. |
+
+#### 6. Сохранность существующих GameData — P0, обязательна во всех сценариях
+
+| Аспект | План |
+| --- | --- |
+| Проверяемое поведение | Раздельные случаи configured GameData вне App (включая другой доступный том) и legacy root без locator. Существующие worlds/settings/user files используются без переноса. Непустой неизвестный GameData не принимается автоматически; недоступный configured root не создаёт fallback. |
+| Риски файлов и HKCU | Главный риск — ошибочная смена locator/root или повреждение пользовательских файлов при Cancel/retry. Создание locator при закреплении legacy может быть ожидаемо; это не изменение содержимого GameData. Профильные locks/служебные файлы оценивать отдельно от immutable test sentinels. HKCU ограничен diagnostic продуктом. |
+| Предусловия | Snapshot и восстановимая копия, только изолированная тестовая копия данных с world/settings/user sentinels, trusted configured/legacy state. Без действующей игры; отказ при активной game/session lock проверять только отдельным согласованным вариантом. Не подключать production данные к diagnostic профилю. |
+| Ожидаемый результат | До/после каждой операции те же user-file paths/size/SHA-256, нет удаления/миграции. Configured locator неизменен; для legacy допускается только ожидаемое закрепление прежнего root. No fallback при недоступности; если нужный root не может безопасно использоваться — отказ. Existing production App/HKCU неизменны. |
+| Evidence | E + полный manifest immutable user files и diff отдельно от служебных writes, locator bytes/hash, фактический выбранный GameData, production App/HKCU baseline; для refusal — отсутствие второго root и записи в fallback. |
+| Автоматизация | Сравнение manifest/locator/HKCU безопасно автоматизировать read-only. Подготовка fixture и операции installer — только в VM; lock/unavailable-volume fault требует отдельного плана, без detach пользовательского D:/VHDX. |
+| Отдельное разрешение | Да, на создание копии fixture и реальные install/Cancel/retry; read-only анализ сохранённых отчётов сам по себе установки не разрешает. |
+
+#### 7. Повторный запуск при уже зарегистрированной установке — P1
+
+| Аспект | План |
+| --- | --- |
+| Проверяемое поведение | A: тот же owned base/Control/package, совпадающие receipt/completion и valid App/HKCU. B: иной registered App, unmanaged legacy App либо несовпадение records. Не смешивать verified repeat с repair/recovery незавершённой операции. |
+| Риски файлов и HKCU | Ложное принятие foreign App/registration, повторный Setup поверх живой установки, принятие stale completion. Native extraction повторяется и может создать новый staging даже при verified repeat; это не повторная установка Velopack. |
+| Предусловия | Сохранённая successful diagnostic установка, точный прежний outer EXE/Control/base; E-before. Для B — отдельный disposable fixture, без ручной порчи production HKCU/records. Текущий E2E script нельзя повторно запускать вслепую: он останавливается при регистрации. |
+| Ожидаемый результат | A: AlreadyInstalled/verified success без нового Setup и HKCU rewrite, с повторной проверкой App/HKCU; при отдельно разрешённом launch один новый VendorProbe marker. Изменение App только в пределах ожидаемого launch marker, GameData/locator сохранены. B: fail-closed, чужой App/HKCU не заменён; при незавершённой owned операции применяются правила 4. |
+| Evidence | E + протокольное alreadyInstalled при доступном захвате, независимый process trace об отсутствии Setup, hashes App/Update до/после с выделением нового marker, HKCU/locator/records diff; для B конкретная причина отказа и сохранность foreign установки. |
+| Автоматизация | A автоматизируем после согласования безопасного repeat режима с сохранённым Control; нынешний script покрывает repeat внутри собственного clean прогона, не повторный вход со старой регистрацией. B только отдельным fixture; нет разрешения менять HKCU ради подготовки сейчас. |
+| Отдельное разрешение | Да, на repeat и optional launch; foreign/legacy fixture/registration setup — отдельное явно указанное разрешение. |
+
+Порядок после согласования: baseline сохранности 6 → Cancel 1 → Cancel 2 → Cancel 3 →
+Recovery 4; далее Retry 5 и registered repeat 7. Критерий перехода — отсутствие
+необъяснённого diff GameData/production, подтверждённая фаза и достаточные process/
+record evidence. При повреждении данных, неизвестном Job/metadata или невозможности
+доказать rundown остановить испытание и сохранить всё для review без cleanup.
+Первым рекомендуется Open→Cancel до Install: минимальные ожидаемые side effects,
+проверка UI/exit1 и наблюдателя сохранности перед испытаниями с реальным Velopack.
 
 ### Незакрытые gates и временные файлы
 

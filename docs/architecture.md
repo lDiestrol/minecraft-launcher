@@ -370,14 +370,26 @@ JSON/marker ограничены 16 KiB, bitmap — 32 MiB. Ошибка зап�
 повторная попытка его не исправляет. Screenshots и Main marker contract сохранены.
 Production не получает writer/CLI override, ACL/install/helper/hash решения прежние.
 
-Независимый review текущей модели не выявил критической проблемы. По данным владельца,
-Windows10 clean GUI E2E на C: успешен; run `2eb6e67196fb42d2876f5aff153b08a1` на D:
-отказал до extraction. Для `Authenticated Users: Modify`, mask `0x001301BF`,
+Исторический review до новых отчётов не выявил критической проблемы. По данным
+владельца, старый run `2eb6e67196fb42d2876f5aff153b08a1` на D: отказал до extraction.
+Для `Authenticated Users: Modify`, mask `0x001301BF`,
 пересечение с текущим namespace запретом равно `0x112`: `FILE_ADD_FILE/FILE_WRITE_DATA`,
 `FILE_WRITE_EA`, `FILE_WRITE_ATTRIBUTES`. Код сначала проверяет `D:\`, до создания
 `.launcher-install`; это согласуется с предполагаемым исключением
 `unsafe directory namespace ACL: D:\`. Точное исключение старого запуска не сохранено;
-новая диагностика ещё не испытана реальным GUI E2E на этом томе.
+на момент того review новая диагностика ещё не была испытана на этом томе.
+
+Дополнение по предоставленным отчётам домашних Windows10 испытаний сборки
+`970588dc`, документировано 17.10.2026: C: clean run
+`04f7041153da4f9181335a70c224a1c9` — PASS; D: negative run
+`3ff160b27f824ecc8325a4b83ce2e24d` — PASS с ожидаемым GUI exit1 и `failure.json`:
+`namespace_audit` / `namespace_acl`, path `D:\`, rule
+`untrusted_allow_rights_rejected`, trustee `authenticated_users`, allowedMask `1245631`,
+rejectedMask `274`. Это сообщение владельца, не самостоятельная проверка evidence
+на Debian; подробности и границы — [PROJECT_LEDGER.md](PROJECT_LEDGER.md).
+Отказ D: согласуется с текущим audit корня до staging и не доказывает возможность
+установки на этом томе. План оставшихся Cancel/Recovery испытаний —
+[releasing.md](releasing.md#план-оставшихся-windows-gui-e2e-cancel-и-recovery).
 
 Важно различать права: эта конкретная mask **не содержит** `FILE_DELETE_CHILD`,
 `WRITE_DAC`, `WRITE_OWNER`. Создание файлов в root само по себе не даёт записи в
