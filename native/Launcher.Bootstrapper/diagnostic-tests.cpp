@@ -1,4 +1,5 @@
 // Exercise the actual worker and evidence boundary; no installer/helper is executed.
+#define EXTRACTION_BARRIER_COMPONENT_TESTS
 #define wWinMain unusedProductEntry
 #include "main.cpp"
 #undef wWinMain
@@ -23,6 +24,68 @@ void fixtureAcl(const std::wstring& path, const std::wstring& sid, const wchar_t
 std::string contents(const std::wstring& path) {
     auto file = readFile(path); auto size = length(file.h); require(size <= 16384); std::string data(static_cast<size_t>(size), '\0');
     readExact(file.h, data.data(), static_cast<DWORD>(size)); return data;
+}
+// Future Windows component regression of the real message handler + worker, using ONLY data fixtures.
+// Authored here, not executed by the Debian task. No vendor/helper can run in barrier mode.
+void extractionBarrierChecks(const std::wstring& root, const std::wstring& sid, const wchar_t* fixture) {
+    INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_PROGRESS_CLASS}; check(InitCommonControlsEx(&controls));
+    WNDCLASSW cls{}; cls.hInstance = GetModuleHandleW(nullptr); cls.lpszClassName = L"ExtractionBarrierComponent"; cls.lpfnWndProc = procedure;
+    check(RegisterClassW(&cls) != 0);
+    for (int mode : {0, 1, 2, 3, 4, 5}) {
+        handle premature; // Outlives app/worker if an assertion throws.
+        app a; a.instance = cls.hInstance; a.sid = sid; a.launchId = guid(); a.base = root + L"\\barrier-base-" + std::to_wstring(mode);
+        a.localData = root + L"\\barrier-control-" + std::to_wstring(mode); a.payload = std::make_unique<bundle>(fixture);
+        auto evidence = root + L"\\barrier-evidence-" + std::to_wstring(mode);
+        a.evidence = std::make_unique<diagnosticEvidence>(evidence, sid, a.launchId);
+        a.barrier = std::make_unique<extractionBarrier>(*a.evidence, sid, a.launchId);
+        if (mode == 4) a.barrier->beforePublicationForTest = [&](const std::wstring& name) {
+            handle unavailable(OpenEventW(EVENT_MODIFY_STATE, FALSE, name.c_str()));
+            check(!unavailable.valid() && GetLastError() == ERROR_FILE_NOT_FOUND);
+            premature = handle(CreateEventW(nullptr, TRUE, FALSE, name.c_str())); check(premature.valid()); check(SetEvent(premature.h));
+            // This signal is in the former check->publish window. Native exclusive create must reject it.
+        };
+        HWND window = CreateWindowExW(0, cls.lpszClassName, L"Hidden component", WS_OVERLAPPEDWINDOW, 0, 0, 740, 520, nullptr, nullptr, cls.hInstance, &a);
+        check(window != nullptr); // Not shown. WM_CREATE constructs the actual Cancel control.
+        SendMessageW(window, WM_COMMAND, 107, 0); // The real Install-request handler starts installWorker.
+        auto deadline = GetTickCount64() + 10000; json::object reached;
+        while (GetTickCount64() < deadline) {
+            try { auto text = json::wide(contents(evidence + L"\\extraction-04.json")); reached = json::parser(text).read(); break; }
+            catch (const std::exception&) { if (a.workerDone) break; Sleep(1); }
+        }
+        require(!reached.empty()); require(json::text(reached, L"event") == L"barrier_reached");
+        handle continuation;
+        if (mode == 2 || mode == 5) {
+            // Publication precedes event creation; probe actual object availability, never guess a duration.
+            deadline = GetTickCount64() + 10000;
+            do {
+                continuation = handle(OpenEventW(EVENT_MODIFY_STATE, FALSE, json::text(reached, L"continueEvent").c_str()));
+                if (continuation.valid()) break;
+                check(GetLastError() == ERROR_FILE_NOT_FOUND); Sleep(1);
+            } while (!a.workerDone && GetTickCount64() < deadline);
+            check(continuation.valid());
+        }
+        if (mode == 0 || mode == 5) {
+            SendMessageW(a.cancel, BM_CLICK, 0, 0); // Synthetic control activation: BN_CLICKED -> WM_COMMAND108 -> WM_CLOSE, not proof of a human click.
+            if (mode == 5) check(SetEvent(continuation.h)); // Observed Cancel must win over concurrent/pending Continue.
+        } else if (mode == 1) SendMessageW(window, WM_CLOSE, 0, 0);
+        else if (mode == 2) check(SetEvent(continuation.h));
+        deadline = GetTickCount64() + (mode == 3 ? 40000 : 10000); // Missing controller must time out fail-closed.
+        while (!a.workerDone && GetTickCount64() < deadline) Sleep(1);
+        require(a.workerDone); a.worker.join();
+        require(!a.input.valid()); require(a.log.empty()); require(a.outcome.code == 1);
+        require(!std::filesystem::exists(a.base + L"\\App")); require(!std::filesystem::exists(a.base + L"\\GameData"));
+        require(!std::filesystem::exists(a.localData));
+        auto fifth = json::wide(contents(evidence + L"\\extraction-05.json")); auto fields = json::parser(fifth).read();
+        require(json::text(fields, L"event") == ((mode == 0 || mode == 5) ? L"gui_cancel" : mode == 2 ? L"barrier_continue" : L"barrier_failed"));
+        auto last = json::wide(contents(evidence + ((mode == 0 || mode == 5) ? L"\\extraction-08.json" : L"\\extraction-07.json")));
+        require(json::text(json::parser(last).read(), L"event") == L"helper_not_started");
+        // WM_CLOSE may already destroy the window if the worker finishes before requestClose checks it.
+        if (IsWindow(window)) DestroyWindow(window);
+        MSG pending{}; while (PeekMessageW(&pending, nullptr, 0, 0, PM_REMOVE)) {
+            if (pending.message == EventMessage) delete reinterpret_cast<event*>(pending.lParam);
+        } // Discard stale events/WM_QUIT from this owned hidden window.
+    }
+    check(UnregisterClassW(cls.lpszClassName, cls.hInstance));
 }
 int wmain(int count, wchar_t** arguments) {
     try {
@@ -63,12 +126,17 @@ int wmain(int count, wchar_t** arguments) {
         require(!evidence.write(evidenceFile::launched, generic.data(), generic.size())); require(contents(evidencePath + L"\\launched.json") == marker);
         require(evidence.write(evidenceFile::selectionImage, marker.data(), marker.size()));
         require(!evidence.write(evidenceFile::selectionImage, generic.data(), generic.size())); require(contents(evidencePath + L"\\selection.bmp") == marker);
+        require(!evidence.writeBarrierEvent(0, marker)); require(!evidence.writeBarrierEvent(11, marker));
+        require(!evidence.writeBarrierEvent(1, std::string(16385, 'x')));
+        require(evidence.writeBarrierEvent(1, marker)); require(!evidence.writeBarrierEvent(1, generic));
+        require(contents(evidencePath + L"\\extraction-01.json") == marker);
         // A held destination denies writes. Recording remains best effort and never throws or overwrites.
         auto blockedPath = root + L"\\blocked"; diagnosticEvidence blocked(blockedPath, sid, id);
         handle occupied(CreateFileW((blockedPath + L"\\failure.json").c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_FLAG_OPEN_REPARSE_POINT, nullptr)); check(occupied.valid());
         require(!blocked.failure(diagnosticStage::namespaceAudit, failure.get()));
         auto poisonedPath = root + L"\\changed-acl"; diagnosticEvidence poisoned(poisonedPath, sid, id);
         fixtureAcl(poisonedPath, sid, L"(A;;GR;;;AU)"); require(!poisoned.failure(diagnosticStage::gui));
+        require(!poisoned.writeBarrierEvent(1, marker));
         require(GetFileAttributesW((poisonedPath + L"\\failure.json").c_str()) == INVALID_FILE_ATTRIBUTES);
         auto target = root + L"\\target", linked = root + L"\\linked"; privateDirectory(target, sid);
         check(CreateSymbolicLinkW(linked.c_str(), target.c_str(), SYMBOLIC_LINK_FLAG_DIRECTORY | SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE));
@@ -93,6 +161,7 @@ int wmain(int count, wchar_t** arguments) {
                 require(json::text(actual, L"stage") == L"namespace_audit");
             }
         }
+        extractionBarrierChecks(root, sid, arguments[1]);
         std::cout << "Diagnostic checks: " << checks << " passed; fixtures retained\n"; return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

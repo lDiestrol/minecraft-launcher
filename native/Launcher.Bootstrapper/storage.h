@@ -8,6 +8,9 @@
 #include <filesystem>
 #include <vector>
 #include <memory>
+#ifdef INSTALLER_DIAGNOSTIC
+#include <functional>
+#endif
 
 inline void check(bool ok) { if (!ok) throw std::runtime_error("Win32 error " + std::to_string(GetLastError())); }
 struct handle {
@@ -136,7 +139,11 @@ public:
         }
         if (p != data.size() || bytes > 8589934592ULL || !seen.count(L"bootstrapper-catalog.json") || !seen.count(L"helper/launcher.installhelper.exe") || !seen.count(L"vendor/setup.exe") || !seen.count(L"vendor/full.nupkg")) throw std::runtime_error("incomplete payload");
     }
-    void extract(const std::wstring& root, const std::atomic_bool& cancel) {
+    void extract(const std::wstring& root, const std::atomic_bool& cancel
+#ifdef INSTALLER_DIAGNOSTIC
+        , std::function<void(unsigned long long)> firstWrite = {}
+#endif
+    ) {
         std::array<BYTE, 65536> buffer{};
         for (const auto& entry : entries) {
             if (cancel) throw std::runtime_error("extraction cancelled");
@@ -148,6 +155,12 @@ public:
                 if (cancel) throw std::runtime_error("extraction cancelled");
                 DWORD n = static_cast<DWORD>((std::min)(left, static_cast<unsigned long long>(buffer.size()))); readExact(file.h, buffer.data(), n); DWORD written = 0;
                 check(WriteFile(output.h, buffer.data(), n, &written, nullptr)); if (written != n) throw std::runtime_error("short payload write"); digest.add(buffer.data(), n); left -= n;
+#ifdef INSTALLER_DIAGNOSTIC
+                if (firstWrite) {
+                    // Confirm an actual partial write while extract() and its output handle are still active.
+                    check(FlushFileBuffers(output.h)); auto barrier = std::move(firstWrite); firstWrite = {}; barrier(n);
+                }
+#endif
             }
             check(FlushFileBuffers(output.h)); if (digest.finish() != entry.hash) throw std::runtime_error("corrupt extracted payload");
         }

@@ -5,6 +5,9 @@
 #include "protocol.h"
 #include "safety.h"
 #include "diagnostics.h"
+#ifdef INSTALLER_DIAGNOSTIC
+#include "extraction-barrier.h"
+#endif
 #include "lifecycle.h"
 #include "layout.h"
 #include <commctrl.h>
@@ -24,6 +27,7 @@ struct app {
     std::wstring launchId;
 #ifdef INSTALLER_DIAGNOSTIC
     std::unique_ptr<diagnosticEvidence> evidence;
+    std::unique_ptr<extractionBarrier> barrier;
 #endif
     void failureEvidence(diagnosticStage stage, const std::exception* error = nullptr) noexcept {
 #ifdef INSTALLER_DIAGNOSTIC
@@ -162,6 +166,9 @@ void validateExtraction(const std::wstring& base, const std::wstring& game, cons
 struct helper {
     handle process, output, errors;
     helper(app& a, const std::wstring& root, const std::vector<HANDLE>& protection) {
+#ifdef INSTALLER_DIAGNOSTIC
+        if (a.barrier) throw std::runtime_error("helper forbidden in extraction barrier mode");
+#endif
         std::wstring exe = root + L"\\helper\\Launcher.InstallHelper.exe"; noLinks(exe);
         SECURITY_ATTRIBUTES inherit{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE}; HANDLE inputRead = nullptr, inputWrite = nullptr, outputRead = nullptr, outputWrite = nullptr;
         check(CreatePipe(&inputRead, &inputWrite, &inherit, 0)); handle childInput(inputRead), parentInput(inputWrite); check(SetHandleInformation(parentInput.h, HANDLE_FLAG_INHERIT, 0));
@@ -204,6 +211,9 @@ void installWorker(app& a, std::wstring selected) {
     struct completion { app& a; ~completion() { a.workerDone = true; a.post(L"worker-finished"); } } completedWorker{a};
     diagnosticStage stage = diagnosticStage::pathValidation;
     try {
+#ifdef INSTALLER_DIAGNOSTIC
+        if (a.barrier) a.barrier->installRequested(a.payload->bytes);
+#endif
         selected = normalize(selected); std::wstring actualGame = discoverGame(a.localData); validateExtraction(selected, actualGame, a.localData);
         // Reuse the original pinned bundle, never reopen the executable path after UI selection/retry.
         stage = diagnosticStage::space;
@@ -212,7 +222,15 @@ void installWorker(app& a, std::wstring selected) {
         a.post(L"status", L"Подготовка установочных файлов на выбранном диске…");
         stage = diagnosticStage::namespaceAudit;
         secureNamespace namespaceGuard(selected, a.sid); stage = diagnosticStage::staging; namespaceGuard.child(selected + L"\\.launcher-install");
-        std::wstring root = selected + L"\\.launcher-install\\bootstrap-" + guid(); namespaceGuard.child(root, true); stage = diagnosticStage::extraction; payload.extract(root, a.stop);
+        std::wstring root = selected + L"\\.launcher-install\\bootstrap-" + guid(); namespaceGuard.child(root, true); stage = diagnosticStage::extraction;
+#ifdef INSTALLER_DIAGNOSTIC
+        if (a.barrier) {
+            a.barrier->extractionStarted();
+            payload.extract(root, a.stop, [&](unsigned long long count) { a.barrier->partialWrite(count, a.stop); });
+            a.barrier->extractionFinished(); // Always exits this extraction-only mode before pinning/helper.
+        } else
+#endif
+        payload.extract(root, a.stop);
         stage = diagnosticStage::payloadPin;
         auto pinnedPayload = payload.pinExtracted(root); namespaceGuard.recheck();
         if (a.stop) throw std::runtime_error("extraction cancelled"); a.post(L"status", L"Проверка установочного помощника…");
@@ -248,6 +266,9 @@ void installWorker(app& a, std::wstring selected) {
         a.input.close();
         WaitForSingleObject(managed.process.h, 1000); // EOF asks the helper to cancel/recover; never terminate Setup here.
     } catch (const std::exception& e) {
+#ifdef INSTALLER_DIAGNOSTIC
+        if (a.barrier) a.barrier->failed();
+#endif
         a.failureEvidence(stage, &e);
         if (!a.shutdown) a.post(L"failure", a.stop ? L"Установка отменена. Данные сохранены; можно повторить попытку." :
             L"Установку завершить не удалось. Данные сохранены. Проверьте выбранный каталог, диск и целостность установщика.",
@@ -321,9 +342,18 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
                 a->pendingRetry = false;
                 if (a->worker.joinable()) a->worker.join(); wchar_t text[2050]{}; GetWindowTextW(a->folder, text, 2050);
                 a->outcome.begin(); a->workerDone = false; a->shutdown = false; a->launchRequested = false; a->running = true; a->stop = false; a->success = false; a->nonce.clear(); EnableWindow(a->folder, FALSE); EnableWindow(a->browse, FALSE); EnableWindow(a->install, FALSE);
-                SetWindowTextW(a->cancel, L"Отменить"); SendMessageW(a->progress, PBM_SETMARQUEE, TRUE, 50); a->worker = std::thread(installWorker, std::ref(*a), std::wstring(text)); return 0;
+                SetWindowTextW(a->cancel, L"Отменить"); SendMessageW(a->progress, PBM_SETMARQUEE, TRUE, 50);
+#ifdef INSTALLER_DIAGNOSTIC
+                if (a->barrier) a->barrier->installButton();
+#endif
+                a->worker = std::thread(installWorker, std::ref(*a), std::wstring(text)); return 0;
             }
-            if (LOWORD(w) == 108) { SendMessageW(window, WM_CLOSE, 0, 0); return 0; } break;
+            if (LOWORD(w) == 108) {
+#ifdef INSTALLER_DIAGNOSTIC
+                if (a->barrier && a->running && HIWORD(w) == BN_CLICKED && reinterpret_cast<HWND>(l) == a->cancel) a->barrier->cancelButton();
+#endif
+                SendMessageW(window, WM_CLOSE, 0, 0); return 0;
+            } break;
         case EventMessage: {
             std::unique_ptr<event> e(reinterpret_cast<event*>(l));
             if (e->kind == L"worker-finished") {
@@ -361,6 +391,9 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
         }
         case WM_CLOSE:
             if (a->running) { a->stop = true; SetWindowTextW(a->status, L"Отмена установки… Данные и состояние восстановления сохраняются."); }
+#ifdef INSTALLER_DIAGNOSTIC
+            if (a->barrier) a->barrier->notifyStop();
+#endif
             // The worker closes stdin (EOF => existing helper CTS cancellation). UI never locks or writes the pipe.
             if (!a->closing) a->requestClose(); return 0;
         case WM_DESTROY: PostQuitMessage(0); return 0;
@@ -381,9 +414,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
         int count = 0; LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count); check(arguments != nullptr);
         localMemory argumentMemory; argumentMemory.p = arguments;
         a.launchId = guid();
-        if (count == 5 && wcscmp(arguments[1], L"--smoke") == 0) {
+        if (count == 5 && (wcscmp(arguments[1], L"--smoke") == 0 || wcscmp(arguments[1], L"--extraction-barrier") == 0)) {
             a.diagnostic = true; a.launchId = arguments[4]; stage = diagnosticStage::evidence;
             a.evidence = std::make_unique<diagnosticEvidence>(arguments[3], a.sid, a.launchId);
+            if (wcscmp(arguments[1], L"--extraction-barrier") == 0) a.barrier = std::make_unique<extractionBarrier>(*a.evidence, a.sid, a.launchId);
             stage = diagnosticStage::pathValidation; a.base = normalize(arguments[2]);
         }
         else if (count != 1) throw std::runtime_error("invalid diagnostic invocation");

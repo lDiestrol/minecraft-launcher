@@ -1,5 +1,73 @@
 # Единый журнал Minecraft Launcher
 
+> Extraction Barrier v2 — Validation, Commit & Push, снимок 18.10.2026 (UTC+05:00).
+> Исходная/итоговая ветка `feat/v061-gui-bootstrapper`; исходный HEAD
+> `7fe5791b22b40b2da52a81b119ffe2c18918a8e8`. Preflight подтвердил ровно 12 ожидаемых
+> файлов (7 modified +5 untracked), пустой index и отсутствие посторонних изменений.
+> Fetch успешен; origin PR head совпал с исходным HEAD; main
+> `bd98ecd721298981508d54466d11089c1647ab4f`, integration
+> `9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`. GitHub подтвердил
+> [PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14) Open/Draft,
+> base `feat/v0.6.1`. Владелец разрешил ровно один commit
+> `test: add diagnostic extraction cancel barrier` и обычный push только PR-ветки
+> при успешных обязательных проверках. Этот снимок сопровождает такую публикацию;
+> фактические SHA/наличие commit в origin определяются Git/историей PR.
+> Свежая локальная валидация: Python 16/16, C++ policy 41 checks, artifact verifier 11/11;
+> MinGW production/diagnostic/component syntax-only и strict adapter успешны,
+> production 1 109 156 tokens идентичны исходному HEAD; новых warnings нет.
+> Два baseline MinGW native_handle warnings с -fpermissive и исключённые прежние
+> header style warning classes strict adapter явно отделены от новых diagnostics.
+> Оба последних уточнения architecture/releasing проверены и оставлены без правок.
+> Markdown/81 internal links, secret scan, whitespace и полный manual diff review
+> успешны. Ни исходники, ни тесты не исправлялись в этой validation-сессии.
+> Следующий gate — автоматический Windows CI PR, состояние которого проверяется в
+> [Actions](https://github.com/lDiestrol/minecraft-launcher/actions/workflows/ci.yml).
+> Linux syntax-only не означает MSVC/component/E2E PASS. Packaging job остаётся
+> отключённым; отдельная сборка/publish diagnostic EXE и Windows E2E не запускались.
+> Нет merge/tag/release, изменений main/integration/release или домашнего стенда.
+> Следующие блоки — исторические локальные снимки 17.10 до разрешения commit/push;
+> их утверждения «изменения локальные/commit не создан» относятся только к тем этапам.
+
+> Extraction Barrier: исправления после независимого review, 17.10.2026.
+> **READY FOR EXTRACTION BARRIER SECOND REVIEW.** Исходная/итоговая ветка
+> `feat/v061-gui-bootstrapper`, HEAD `7fe5791b22b40b2da52a81b119ffe2c18918a8e8`.
+> Начальное дерево содержало 12 известных локальных файлов предыдущего этапа;
+> неожиданных изменений нет. `git fetch origin` успешен; GitHub подтвердил PR #14
+> Open/Draft, base `feat/v0.6.1` (`9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`),
+> origin/main `bd98ecd721298981508d54466d11089c1647ab4f`; HEAD совпадает с PR head.
+> После CONDITIONAL APPROVAL — NEEDS HARDENING исправлены observer revalidation
+> и ранний Continue: повторные identity/liveness/prefix/deadline проверки с запасом
+> 10s для manual Cancel; native Continue-event создаётся после durable barrier publication.
+> Ранний сторонний CreateEvent отказывает, Cancel/Continue решение покрыто policy tests.
+> BN_CLICKED доказывает путь обработчика control notification, не физическое нажатие
+> человеком; synthetic BM_CLICK допустим для component regression и не скрывается.
+> Новые результаты в разделе 12: Python 16/16, portable C++ 41 checks, verifier 11/11;
+> syntax-only и production isolation подтверждены. MSVC/Windows runtime не проверены.
+> Изменения локальные, без commit/push/merge/release, новой Windows EXE/публикации,
+> helper/Velopack запуска или изменений домашнего Windows-стенда.
+> Следующий блок — исторический снимок первой локальной подготовки до review hardening.
+
+> Диагностический Extraction Cancel barrier, локальная разработка 17.10.2026.
+> **READY FOR EXTRACTION BARRIER CODE REVIEW.** `git fetch origin` успешен;
+> Исходная/итоговая ветка — `feat/v061-gui-bootstrapper`, HEAD
+> `7fe5791b22b40b2da52a81b119ffe2c18918a8e8`; исходное дерево чистое.
+> GitHub подтвердил Open/Draft [PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14),
+> base `feat/v0.6.1` (`9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`), main
+> `bd98ecd721298981508d54466d11089c1647ab4f`. Ниже — локальные изменения без commit/push.
+> Только `INSTALLER_DIAGNOSTIC`: opt-in extraction-only режим, барьер после первой
+> записанной/flush части payload, private session event для continue, GUI Cancel,
+> строгий неизменяемый журнал с Run ID/nonce/PID/start time/UTC/monotonic timestamps.
+> Ожидание ограничено 30s; отказ evidence/контроллера/таймаут не разрешает helper.
+> Continue завершает только extraction; helper запрещён для всего этого режима.
+> Production token stream после препроцессора совпадает с исходным HEAD.
+> Локальные проверки и ограничения — раздел 12; контракт и гонка обычного пути —
+> [architecture.md](architecture.md#диагностический-extraction-cancel-barrier),
+> будущий запуск/контроллер — [releasing.md](releasing.md#будущий-extraction-barrier-test).
+> Windows GUI/Velopack E2E и Windows component tests не выполнялись. MSVC не запускался.
+> Диагностический Windows EXE не создавался/не загружался, packaging выключен.
+> Новые commit/push/merge/release запрещены; пользовательские ACL/HKCU/GameData не менялись.
+> Следующий блок — исторический снимок опубликованного docs-only этапа.
+
 > Windows GUI E2E и план Cancel/Recovery, снимок 17.10.2026 (UTC+05:00).
 > **READY FOR CANCEL/RECOVERY TEST PLANNING.** На DEV-SERVER (Debian) исходная и
 > итоговая ветка задачи — `feat/v061-gui-bootstrapper`; исходный HEAD и проверенная
@@ -803,6 +871,131 @@ SHA не дублируется в Ledger. Minecraft/Fabric smoke, installer/upd
 
 ## 12. Последние проверки
 
+### Validation Extraction Barrier v2 перед публикацией, 18.10.2026
+
+Сверены точный исходный HEAD `7fe5791`, ветка PR, origin refs и Open/Draft PR #14.
+Scope — ровно 12 перечисленных владельцем файлов, без temp binaries/patches/results.
+Оба исправления документации подтверждены: Cancel без контроллера возможен, но не
+полный E2E PASS без observer/state checks; Install auto timer≈700ms, оператор нажимает
+только Cancel после BARRIER OBSERVED; BN_CLICKED не доказывает физический human click.
+Architecture/releasing корректны и в этой validation-сессии не изменялись.
+
+| Обязательная проверка | Свежий результат Debian |
+| --- | --- |
+| Python ExtractionBarrierTests | PASS 16/16 |
+| Portable C++ ExtractionBarrierStateTests | PASS 41 checks; -std=c++17 -Wall -Wextra -Werror -pedantic |
+| DiagnosticArtifactTests | PASS 11/11 |
+| MinGW native syntax-only | PASS production/diagnostic/component, только два исходных native_handle warnings |
+| Сравнение warnings с baseline | Оба сообщения совпали с компиляцией исходного HEAD; новых diagnostics нет |
+| Strict adapter | PASS -Wall -Wextra -Werror, без -fpermissive; прежние -Wno-misleading-indentation/-Wno-missing-field-initializers для headers явно сохранены |
+| Production isolation | Все 1 109 156 preprocessed tokens идентичны исходному HEAD; test hook отсутствует в обычном Diagnostic и есть в component target |
+| Markdown/links/encoding | PASS fences/tables, 81 internal links/anchors, UTF-8/CRLF/whitespace; полноценный Markdown linter отсутствует |
+| Secret scan | PASS по изменённым строкам и всем новым файлам, дополнительно ручной review diff |
+| git diff --check/manual review | PASS полного набора 12 файлов; финальные index/scope проверки обязательны перед commit |
+
+Два MinGW warnings возникают в прежних CancelSynchronousIo(worker.native_handle())
+в destructor/requestClose: POSIX MinGW thread handle не является MSVC HANDLE.
+-fpermissive нужен для этих baseline incompatibilities и не применяется к strict
+adapter. Все compiler diagnostics сохранены в /tmp и выведены при проверках;
+новое предупреждение/ошибка остановили бы публикацию. Windows MSVC build/linking,
+component runtime и полноценный E2E локально не выполнялись. Прежние Windows10
+отчёты относятся к `970588dc` и не подменяют испытания нового кода.
+
+Авторизована публикация одним commit с точным message
+`test: add diagnostic extraction cancel barrier`, только 12 разрешённых путей.
+Commit SHA, факт push и результаты автоматически запущенного Windows CI должны
+сверяться по Git/PR/Actions; этот текст не объявляет Windows CI успешным заранее.
+После публикации следующий gate — **READY FOR EXTRACTION BARRIER WINDOWS CI**.
+Ниже — исторические результаты предыдущих локальных этапов.
+
+### Extraction Barrier hardening после независимого review, 17.10.2026
+
+Переданный владельцем вердикт для первых локальных source/full patches:
+**CONDITIONAL APPROVAL — NEEDS HARDENING**. Исправления выполнены на тех же
+известных незакоммиченных изменениях, без смены HEAD/ветки и без публикации.
+
+- Observer после валидного barrier_reached повторно читает ровно четыре события,
+  заново открывает процесс с exact PID/start time, проверяет liveness и native
+  GetTickCount64 deadline. Перед BARRIER OBSERVED требуется минимум 10000ms;
+  после clock query liveness проверяется ещё раз. Exit/identity change, истёкший/
+  будущий timestamp, меньший запас и progress за барьер — FAIL. Continue повторяет
+  freshness checks после OpenEvent до SetEvent. Epoch Python monotonic не смешивается
+  с GetTickCount64. Готовность остаётся снимком, не резервированием времени.
+- Старый precheck→publication window устраняется созданием native Continue-event
+  только после успешных write/flush/close barrier_reached. До publication endpoint
+  отсутствует; сторонний pre-created object (любого signal state) отказывает через
+  ERROR_ALREADY_EXISTS без adoption/reset. One-shot policy не создаёт объект при
+  publication failure и не разрешает reuse после ошибки. Продолжение extraction-only
+  по-прежнему не разрешает helper. Между publication и create легитимный OpenEvent
+  может безопасно отказать; клиент не должен создавать объект вместо native.
+- Общая C++ policy покрывает early/not-armed сигнал, writer/create failure,
+  poisoned gate/reuse и все восемь комбинаций stop/cancel/continue. Наблюдённый
+  Cancel имеет приоритет; поздний Cancel после выбора Continue не подделывает
+  Cancel sequence. Windows component cases дополнены ранним сигналом в publication
+  hook и Cancel с pending Continue; hook исключён из ordinary diagnostic artifact.
+- `gui_cancel` фиксирует WM_COMMAND108/BN_CLICKED с handle нужного control.
+  Это путь обработчика, не доказательство физического нажатия человеком: BM_CLICK
+  и синтетические window messages могут его пройти. Документация уточнена.
+
+Свежие проверки Debian: Python 16/16 (включая observer race/margin/identity/liveness),
+portable C++ 41 checks с -Wall/-Wextra/-Werror/-pedantic; artifact verifier 11/11.
+MinGW syntax-only production/diagnostic/component успешен с теми же двумя
+исходными MSVC-native_handle warnings и -fpermissive; strict adapter syntax с -Werror
+без -fpermissive успешен (прежние header style warnings исключены).
+Preprocessed production: 1 109 156 tokens идентичны HEAD `7fe5791`; test hook отсутствует
+в обычном Diagnostic и присутствует только в component target. Windows GUI/component
+runtime, MSVC и реальный E2E не запускались; эти результаты их не заменяют.
+Документальные проверки пройдены: Markdown fences/tables,81 internal links/anchors,
+UTF-8/CRLF/whitespace, secret-pattern scan и ручной review diff; git diff --check чистый.
+Полноценный Markdown linter отсутствует. Итоговые source/full и отдельный incremental
+hardening patches подготовлены для второго review; прежние patches сохранены.
+Все изменения остаются локальными; commit/push/merge/release не выполнялись.
+Статус: **READY FOR EXTRACTION BARRIER SECOND REVIEW**.
+
+### Open → Cancel Before Install и локальный Extraction Barrier, 17.10.2026
+
+**Open → Cancel Before Install — PASS по предоставленному отчёту Windows Work.**
+Домашний Windows10; сборка `970588dc041cfb4d60da3980da2c9bd8bbbb6b93`.
+Run ID `acfd2de85c10470a9289babce8bceb0a`; GUI exit1, Safe-script exit0.
+InstallHelper, Velopack и VendorProbe не запускались. App, GameData, intent,
+receipt, completion и HKCU не изменились; существующие установки и пользовательские
+данные сохранены. Скриншот GUI недоступен. Результат основан на переданном отчёте
+и проверках состояния; исходные Windows evidence на Debian независимо не исследованы.
+Это не результат Extraction Cancel и не испытание нового локального кода.
+
+После read-only review владелец отдельно разрешил локальную разработку
+диагностического барьера и эту запись без commit/push. Изменены только native
+bootstrapper diagnostic/extraction участки, добавлены portable policy, Windows
+adapter, controller/verifier и регрессии; helper/Coordinator/payload/packaging/version
+не изменены. Отдельный режим не доходит до helper даже при разрешении continue.
+Журнал PASS требует именно GUI Cancel button → наблюдение worker → abort → no helper.
+Прямой WM_CLOSE/stop-only, continue, timeout, отсутствующий/неполный/устаревший журнал
+не считаются успешным Cancel E2E. Обычная гонка stop→CreateProcessW описана, production
+исправление не разрешалось. Предыдущие E2E относятся только к исходной сборке970588dc.
+
+Исторические проверки первой локальной подготовки до hardening: Python controller/
+journal10/10, прежний artifact
+verifier 11/11; Linux C++ policy18 checks с -Wall/-Wextra/-Werror/-pedantic.
+MinGW syntax-only production/diagnostic/main и diagnostic component tests успешны
+с -fpermissive: две известные исходные MSVC-native_handle несовместимости MinGW,
+ровно те же предупреждения на baseline; strict adapter syntax -Wall/-Wextra/-Werror
+(кроме двух существующих классов style warnings headers) успешен без -fpermissive.
+Preprocessed production: все1 109 156 tokens идентичны HEAD7fe5791 (SHA256 token stream
+`d1e3d6ae3f58777051a614811e52e473e818deb04b5f4af1e82db79a704cb311`).
+Markdown fences/tables,81 local links/anchors, UTF-8/CRLF, secret-pattern scan и ручной
+review diff пройдены; git diff --check чистый. Полный Markdown linter отсутствует.
+Нативный Windows linking/MSVC build не выполнялся; MinGW syntax-only не заменяет
+MSVC /W4 /WX или runtime tests. Linux C++ test binary — только portable unit test,
+не диагностический Windows EXE. Все toolchain/logs находятся в /tmp, без установки
+пакетов в систему. Начальная попытка скачать MinGW в sandbox отказала из-за DNS;
+последующее разрешённое download-only получение в /tmp и syntax checks успешны.
+Статус: **READY FOR EXTRACTION BARRIER CODE REVIEW**.
+Windows component tests с BN_CLICKED handler на data-only fixture написаны
+(синтетический BM_CLICK, не доказательство физического нажатия),
+но не запускались; timeout/no-button/continue не подменяют будущий Windows E2E.
+MSVC /W4 /WX, сборка/Windows E2E нового diagnostic artifact требуют отдельного этапа.
+Изменения локальные; commit/push не создавались, HEAD не изменён.
+
 ### Windows GUI E2E сборки 970588dc и документационный review, 17.10.2026
 
 Источник результатов — предоставленные владельцем E2E-отчёты реальных испытаний
@@ -1486,10 +1679,12 @@ Guardian crash по-прежнему сообщает Launcher ошибку на
 
 1. Сохранить исходные Windows evidence и существующие установки; два отчёта для
    `970588dc` зафиксированы в разделе 12. Новые испытания в этой задаче не выполняются.
-2. После отдельного разрешения начать с Cancel до распаковки по
-   [плану E2E](releasing.md#план-оставшихся-windows-gui-e2e-cancel-и-recovery), затем
-   extraction Cancel; переход к Velopack Cancel/recovery — только с изолированным
-   snapshot и согласованными целями прерывания. GameData проверять на каждом шаге.
+2. Open → Cancel Before Install подтверждён переданным Windows Work отчётом
+   (раздел 12). Следующий шаг — второе review исправленного diagnostic extraction barrier;
+   новая сборка и Extraction Cancel Windows E2E требуют отдельного разрешения.
+   [Полный план](releasing.md#план-оставшихся-windows-gui-e2e-cancel-и-recovery)
+   сохраняется; Velopack Cancel/recovery — только с изолированным snapshot и
+   согласованными целями прерывания. GameData проверять на каждом шаге.
 3. PR #14 остаётся Draft; merge, новая сборка и release требуют отдельного решения.
    Main, `feat/v0.6.1`, `release/v0.6.0` не изменять. Остальные release gates и
    SDK update fallback остаются открытыми, диагностический PASS их не закрывает.

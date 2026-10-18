@@ -424,6 +424,116 @@ record evidence. При повреждении данных, неизвестн�
 Первым рекомендуется Open→Cancel до Install: минимальные ожидаемые side effects,
 проверка UI/exit1 и наблюдателя сохранности перед испытаниями с реальным Velopack.
 
+### Будущий Extraction Barrier test
+
+Код подготовлен локально; Windows GUI/E2E, MSVC и новые packaged binaries в этой
+задаче не запускались/не создавались. Это инструкция для отдельно разрешённого
+будущего испытания. EXE `970588dc` **не поддерживает** новый флаг; потребуется отдельно
+разрешённая новая diagnostic сборка из reviewed source с точным source SHA/hash.
+Package-diagnostic CI остаётся отключённым. Production EXE использовать нельзя.
+Контракт/гонка — [architecture.md](architecture.md#диагностический-extraction-cancel-barrier).
+
+До запуска: ordinary Windows10 token/UAC, уникальный owned base и проверенный
+существующий безопасный NTFS parent для нового evidence leaf; никакого изменения
+ACL/HKCU, удаления регистрации, старых runs или обращения к production GameData.
+Diagnostic profile рядом с outer EXE должен принадлежать этому тесту и не содержать
+locator к production/чужим данным. Существующая diagnostic HKCU-регистрация остаётся:
+режим extraction-only вообще не доходит до managed preflight/регистрации/Setup.
+Проверить EXE/build-info/SHA256SUMS, free space и no-reparse/ACL/read-only baseline.
+Новый evidence leaf заранее не создавать. При конфликте/небезопасном namespace —
+остановиться без «исправления» прав. Действия подготовки стенда согласуются отдельно.
+
+В режиме `--extraction-barrier` Install запускается автоматически диагностическим
+GUI-таймером примерно через 700 мс. Оператор не должен самостоятельно нажимать Install.
+
+После отдельного разрешения, пример будущего запуска из PowerShell7:
+
+```powershell
+# $outer — reviewed NEW compiled Diagnostic EXE; $ownedParent — approved existing private test parent.
+$runId = [guid]::NewGuid().ToString('N')
+$base = Join-Path $ownedParent "base-$runId"
+$evidence = Join-Path $ownedParent "evidence-$runId" # Must NOT exist; native creates and audits it.
+$gui = Start-Process -FilePath $outer -ArgumentList "--extraction-barrier `"$base`" `"$evidence`" $runId" -PassThru
+$startTicks = $gui.StartTime.ToUniversalTime().ToFileTimeUtc()
+python -B ./scripts/extraction-barrier.py wait $evidence --run-id $runId --pid $gui.Id --process-start-ticks $startTicks
+```
+
+`wait` не запускает/не останавливает процессы, не пишет файлы и не нажимает кнопку.
+После первых четырёх durable событий он повторно читает prefix и заново проверяет
+exact PID/start time, liveness и deadline через GetTickCount64. Для `wait` обязателен
+запас минимум 10000ms на ручную отмену; меньший запас/exit/изменившийся prefix дают FAIL,
+без BARRIER OBSERVED. При успехе печатает nonce, оставшиеся ms на момент проверки и
+**BARRIER OBSERVED, not E2E PASS**. Это снимок, не резервирование окна: процесс может
+завершиться или время истечь уже после проверки. Poll 25ms ждёт фактический event,
+не угадывает длительность extraction. При malformed/stale evidence, отсутствии
+барьера, недоступном процессе — отказ. Контроллер не изменяет ACL и не создаёт events.
+
+После BARRIER OBSERVED пользователь вручную нажимает только Cancel («Отменить»)
+в окне указанного PID,
+пока worker удерживается на барьере (30s от barrier_reached). Не заменять кнопку
+закрытием окна, Escape, прямым stop=true или kill. Сохранить напечатанный nonce.
+Native фиксирует обработку события кнопки: WM_COMMAND108 с BN_CLICKED и handle
+нужного Cancel control; worker не создаёт этот receipt самостоятельно. Уведомление также может
+быть получено от BM_CLICK/синтетических сообщений, поэтому журнал **не доказывает
+физическое нажатие человеком**. Component test намеренно использует BM_CLICK.
+На несовпадении/таймауте не повторять на старом leaf.
+
+После окончания GUI (ожидаемый exit1), с nonce из этого observer:
+
+```powershell
+python -B ./scripts/extraction-barrier.py verify $evidence --run-id $runId --nonce '<observed nonce>' --pid $gui.Id --process-start-ticks $startTicks
+```
+
+Verifier принимает ровно 8 событий, правильный порядок/identity/bytes и Cancel до
+deadline. Его exit0 означает только PASS журнала. Общий safe-script PASS дополнительно
+требует GUI exit1, независимого process trace без InstallHelper/Setup/Velopack/
+VendorProbe, отсутствия новых App/GameData/intent/receipt/completion/HKCU changes
+и сохранности существующих установок. Нельзя подтверждать отсутствие короткоживущего
+helper только снимком списка процессов после выхода. Отсутствующее событие, неизвестная
+фаза, повреждённый/устаревший журнал или отсутствие независимого process evidence —
+FAIL/недостаточное evidence, не PASS. Сохранять весь staging/evidence без cleanup.
+Screenshot желателен, но источником фазовой гарантии служит барьер и журнал.
+
+Для отдельного отрицательного/control case команда `continue` вместо GUI Cancel:
+
+```powershell
+python -B ./scripts/extraction-barrier.py continue $evidence --run-id $runId --nonce '<observed nonce>' --pid $gui.Id --process-start-ticks $startTicks
+```
+
+Она открывает только native private session event и выставляет его после повторной
+проверки identity/liveness/deadline, в том числе после OpenEvent. Native создаёт этот
+endpoint только после flush/close barrier_reached. До публикации OpenEvent отказывает;
+заранее созданный сторонний объект вызывает native fail-closed отказ независимо
+от signal state. Малое окно publication→create может дать OpenEvent failure даже
+валидному контроллеру: безопасно остановиться, не создавать event самостоятельно.
+Управляющие файлы не создаются. Результат: extraction_completed/helper_not_started,
+GUI exit1, verifier Cancel-sequence обязан отказать. Timeout, WM_CLOSE без Cancel,
+stale nonce/run/process и write failure также не должны давать PASS. Continue не
+разрешает InstallHelper даже при состязании с Cancel. Эти реальные Windows проверки
+ещё не выполнялись и требуют отдельного согласования.
+
+Локальные переносимые проверки (не Windows E2E):
+
+```bash
+python3 -B -m unittest discover -s tests -p ExtractionBarrierTests.py
+g++ -std=c++17 -Wall -Wextra -Werror -pedantic tests/ExtractionBarrierStateTests.cpp -o /tmp/extraction-policy-tests
+/tmp/extraction-policy-tests
+```
+
+[Diagnostic component tests](../native/Launcher.Bootstrapper/diagnostic-tests.cpp)
+дополнены hidden-window fixture cases: реальный Install handler → worker → BM_CLICK
+Cancel control (синтетическое BN_CLICKED, не физическое нажатие); прямой WM_CLOSE
+отвергается; continue не запускает helper; без контроллера timeout отказывает.
+Добавлены ранний CreateEvent/SetEvent во время publication и Cancel с pending
+Continue; test hook компилируется только в diagnostic component target под отдельным
+EXTRACTION_BARRIER_COMPONENT_TESTS, не в обычный diagnostic artifact. Только data-only fixture, не настоящий payload.
+На Debian они проверены syntax-only, не исполнялись. Исходники для следующей отдельно
+разрешённой native сборки: main.cpp, storage.h, diagnostics.h, extraction-barrier.h,
+extraction-barrier-state.h плюс неизменённые существующие native dependencies/resources.
+Controller/verifier и tests — отдельные developer files, в payload не включаются.
+Helper/Coordinator/VendorProbe source не изменялся. Нельзя смешивать old `970588dc`
+outer EXE с новыми флагами или выдавать local policy success за installed E2E.
+
 ### Незакрытые gates и временные файлы
 
 Bootstrapper извлекает крупные файлы на выбранный том; это подтверждено native

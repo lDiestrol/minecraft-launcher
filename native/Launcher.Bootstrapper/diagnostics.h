@@ -82,6 +82,17 @@ public:
             return true;
         } catch (...) { return false; } // Evidence never changes the installation decision, retries or security checks.
     }
+    bool writeBarrierEvent(size_t sequence, const std::string& data) noexcept {
+        static const wchar_t* names[]{L"extraction-01.json", L"extraction-02.json", L"extraction-03.json", L"extraction-04.json",
+            L"extraction-05.json", L"extraction-06.json", L"extraction-07.json", L"extraction-08.json", L"extraction-09.json", L"extraction-10.json"};
+        try {
+            if (sequence < 1 || sequence > 10 || data.empty() || data.size() > 16384) return false;
+            guard.recheck(); auto path = root + L"\\" + names[sequence - 1];
+            handle output(CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_FLAG_OPEN_REPARSE_POINT, nullptr)); check(output.valid());
+            DWORD written = 0; check(WriteFile(output.h, data.data(), static_cast<DWORD>(data.size()), &written, nullptr));
+            check(written == data.size()); check(FlushFileBuffers(output.h)); return true;
+        } catch (...) { return false; }
+    }
     bool failure(diagnosticStage stage, const std::exception* error = nullptr) noexcept {
         try { auto data = failureJson(stage, launchId, error); return write(evidenceFile::failure, data.data(), data.size()); }
         catch (...) { return false; }

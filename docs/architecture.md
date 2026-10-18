@@ -428,3 +428,108 @@ reboot. Безопасное staging не доказывает безопасн�
 launch путей. Обязательны атаки другого непривилегированного SID на Windows10/11,
 concurrent rename/delete/reparse и явные границы same-SID/admin/SYSTEM/volume remapping.
 Эта новая модель в PR #14 не реализована; проверки `secureNamespace()` не ослаблены.
+
+### Диагностический Extraction Cancel barrier
+
+Локальный контракт 17.10.2026; реализация только под `INSTALLER_DIAGNOSTIC`:
+[adapter](../native/Launcher.Bootstrapper/extraction-barrier.h),
+[portable policy](../native/Launcher.Bootstrapper/extraction-barrier-state.h),
+[controller/verifier](../scripts/extraction-barrier.py).
+Это opt-in `--extraction-barrier <base> <new-evidence-leaf> <runId>`; обычные
+production и diagnostic `--smoke` не получают этот барьер. Режим extraction-only
+никогда не запускает helper/Velopack/VendorProbe, в том числе после continue.
+Не является новым production installation/recovery protocol.
+
+Worker фиксирует install request из настоящего WM_COMMAND107 и вход в extraction.
+После первого успешного WriteFile (не более 64 KiB) выполняется FlushFileBuffers
+ещё открытого output handle. Количество bytes положительно и меньше total payload:
+index требует минимум четыре непустых entries, поэтому весь payload ещё не извлечён.
+Только тогда callback, вызванный внутри extract(), публикует payload_bytes_written
+и barrier_reached. Остальные bytes/entries не записываются до решения на барьере.
+Наличие файла без этих событий не подтверждает фазу.
+
+При достижении барьера worker ждёт WaitForMultipleObjects не более 30s от monotonic
+времени barrier_reached (включая публикацию события). Один handle — unnamed cancel
+signal, второй — manual-reset `Local\MinecraftLauncher.Extraction.<runId>.<sessionNonce>`.
+Session nonce генерируется внутри native через GUID; runId проверяется как 32 lowercase
+hex. Continue-event создаётся **только после** успешной записи/flush/close
+barrier_reached, non-inheritable, с protected DACL текущего SID/SYSTEM. До завершения
+публикации native endpoint не существует: ранний OpenEvent отказывает. Если сторонний
+процесс заранее создаст объект с предсказанным именем (signaled или unsignaled),
+ERROR_ALREADY_EXISTS отказывает без adoption/reset/повторного arm. One-shot policy
+publishThenCreate не создаёт endpoint при publication failure и не допускает reuse.
+Это устраняет окно старой схемы check-event → publish, в котором ранний SetEvent
+мог быть принят после записи barrier_reached. Разрешённая фаза Continue начинается
+после durable publication; ожидание worker ещё не обязано войти в WaitForMultipleObjects.
+Контроллер только открывает существующий event, не создаёт его и не пишет control files.
+Старые run/nonce/event handles не управляют новой сессией. Отсутствие внешнего
+контроллера само по себе не означает отказ: пользователь может нажать Cancel
+непосредственно в GUI до истечения 30 секунд. Без независимого observer и проверок
+состояния такой результат нельзя автоматически считать полноценным Extraction
+Cancel E2E PASS. Если нет Cancel или разрешённого Continue, наступает timeout;
+timeout, wait failure или ошибка публикации — отказ без helper.
+
+GUI фиксирует timestamp только в WM_COMMAND108 с BN_CLICKED и lParam действительного
+Cancel control. Это evidence прохождения обработчика уведомления, **не доказательство
+физического нажатия человеком**: BM_CLICK и синтетические window messages также могут
+пройти этот маршрут. Дальнейший WM_CLOSE публикует a.stop и сигналит unnamed event.
+UI не пишет журнал и не ждёт filesystem: mutex защищает только timestamp/boolean.
+Worker проверяет stop, источник кнопки и deadline; сохраняет gui_cancel с исходным
+UI timestamp, worker_observes_cancellation, выбрасывает исключение из extract().
+После закрытия output handle catch фиксирует extraction_aborted и helper_not_started.
+WM_CLOSE/Escape без кнопки, ранний/поздний Cancel и установка stop без GUI receipt
+не могут пройти полный контракт. И Cancel, и continue могут состязаться; Cancel
+проверяется первым при выборе результата (stop/cancel signal/continue signal проверяются
+общей portable policy). Cancel, пришедший после выбора Continue, не превращает trace
+в Cancel PASS; дальнейшие stop checks могут прервать extraction. В любом исходе
+extraction-only запрет helper сохраняется.
+
+Continue возобновляет только extraction. После неё фиксируются extraction_completed
+и helper_not_started, GUI завершается с exit1. Cancel success для данного испытания
+также имеет GUI exit1: это отказ установки, не typed installation success.
+Таймаут создаёт barrier_failed → extraction_aborted → helper_not_started; это FAIL
+для Cancel sequence. Журнал/частичный payload сохраняются, автоматической очистки нет.
+Два независимых предохранителя: выход из worker до pin/helper и запрет в constructor
+helper до логов/pipe/CreateProcessW для любого app с этим режимом.
+
+Журнал — фиксированные immutable `extraction-01.json`…`extraction-10.json` в том же
+проверенном private evidence leaf; writeBarrierEvent использует pinned namespace,
+recheck, CREATE_NEW, no share-write/delete, flush и предел 16 KiB. Ошибка записи
+прекращает операцию; отсутствующее событие никогда не восстанавливается/не выдаётся
+за PASS. Существующие leaf/files не принимаются и не заменяются. При driver/flush
+hang прежний GUI watchdog может прервать процесс и оставить неполное evidence;
+такой прогон FAIL. Нет fallback в другие каталоги.
+
+Schema1 каждого события: runId, sessionNonce, sequence, event, utcFileTimeTicks
+(Windows FILETIME UTC), monotonicMs (GetTickCount64), pid, processStartFileTimeTicks,
+bytesWritten, totalBytes; barrier_reached дополнительно содержит continueEvent и
+фиксированный timeoutMs `30000`. Полная Cancel sequence состоит ровно из восьми событий:
+install_requested → extraction_started → payload_bytes_written → barrier_reached →
+gui_cancel → worker_observes_cancellation → extraction_aborted → helper_not_started.
+Verifier отвергает пропуски/перестановки/лишние поля, duplicate JSON keys, bool вместо
+чисел, stale run/nonce/process, неверные bytes/timestamps/deadline и другой event name.
+UTC может изменяться при коррекции часов; порядок проверяется sequence/monotonic.
+Live observer после первого валидного prefix повторно читает журнал, проверяет
+точный GUI PID/start time и liveness новым query/synchronize handle. Перед выводом
+BARRIER OBSERVED проверяет deadline через Windows GetTickCount64 (тот же epoch, что
+в журнале) и требует минимум 10000ms на ручную отмену; expired/future timestamp,
+завершившийся/подменённый процесс, progress beyond barrier и меньший запас — FAIL.
+После clock query повторно проверяется liveness. Continue проверяет свежесть также
+после OpenEvent непосредственно перед SetEvent; continue handle — только EVENT_MODIFY_STATE.
+Окно между публикацией и созданием endpoint может дать безопасный OpenEvent failure,
+который нельзя превращать в разрешение создать event со стороны контроллера.
+Readiness — снимок на момент последней проверки: preemption, последующий exit/Cancel/
+Continue или медленная реакция человека всё ещё возможны. Вывод не резервирует время
+и не доказывает будущий успех. Exit observer-ready не является E2E PASS. Журнал доказывает instrumented path, но не защищает от
+злонамеренной подделки evidence процессом того же пользователя; не security boundary.
+Независимые process trace и проверки сохранности остаются обязательными.
+
+**Обычная гонка stop → CreateProcessW остаётся.** В installWorker после последнего
+`if (a.stop)` следуют status/nonce/pins и constructor helper; непосредственно перед
+CreateProcessW повторной атомарной проверки/барьера нет. Cancel может попасть в этот
+промежуток, и helper будет создан; shutdown/EOF затем отменяет managed operation.
+Простая дополнительная проверка stop также не даёт атомарности с CreateProcessW.
+В этой задаче production путь не менялся; extraction-only mode закрывает свой
+риск без исправления обычной установки. Изменение общего lifecycle требует отдельного
+согласования. Сравнение preprocessed production token stream с исходным `7fe5791`
+подтвердило идентичность; Windows runtime/MSVC/E2E этим не проверены.
