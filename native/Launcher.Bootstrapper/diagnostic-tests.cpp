@@ -109,7 +109,7 @@ void extractionBarrierChecks(const std::wstring& root, const std::wstring& sid, 
                 DWORD attrs = GetFileAttributesW(path.c_str());
                 if (attrs == INVALID_FILE_ATTRIBUTES) {
                     DWORD status = GetLastError();
-                    std::cerr << "  extraction-" << sequence << ": absent (win32=" << status << ")\\n";
+                    std::cerr << "  extraction-" << sequence << ": absent (win32=" << status << ")\n";
                     continue;
                 }
                 try {
@@ -123,7 +123,7 @@ void extractionBarrierChecks(const std::wstring& root, const std::wstring& sid, 
                     auto fields = json::parser(json::wide(bytes)).read();
                     std::cerr << "  extraction-" << sequence << ": " << json::utf8(json::text(fields, L"event")) << '\n';
                 } catch (const std::exception& readError) {
-                    std::cerr << "  extraction-" << sequence << ": unreadable (" << readError.what() << ")\\n";
+                    std::cerr << "  extraction-" << sequence << ": unreadable (" << readError.what() << ")\n";
                 }
             }
             throw;
