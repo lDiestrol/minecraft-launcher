@@ -311,7 +311,7 @@ public sealed class InstallationSafetyTests
         public InstallationRegistration? Registration { get; set; }
         public InstallationRequest Request { get; }
         private const string Manifest = "<package><metadata><id>lDiestrol.MinecraftLauncher</id><version>0.6.0</version><channel>stable</channel><mainExe>MinecraftLauncher.exe</mainExe><machineArchitecture>x64</machineArchitecture></metadata></package>";
-        public Sandbox()
+        public Sandbox(string packagedUpdater = "updater-fixture")
         {
             System.IO.Directory.CreateDirectory(Directory);
             string setup = Path.Combine(Directory, "Setup.exe");
@@ -322,6 +322,7 @@ public sealed class InstallationSafetyTests
                 Add(archive, "Launcher.nuspec", Manifest);
                 Add(archive, "lib/app/MinecraftLauncher.exe", "main-exe-fixture");
                 Add(archive, "lib/app/library.dll", "library-fixture");
+                Add(archive, "lib/app/Squirrel.exe", packagedUpdater);
             }
             Request = new(Base, "user", new(setup, Hash(setup), package, Hash(package), Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("updater-fixture"))), "0.6.0", "stable"));
             Backend = new(LocalData, Application, () => "user", (_, _) => true, registration: () => Registration);

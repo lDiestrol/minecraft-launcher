@@ -7,7 +7,8 @@ param(
     [ValidateSet('dev', 'stable')]
     [string]$Channel,
 
-    [switch]$KeepPreviousReleases
+    [switch]$KeepPreviousReleases,
+    [string]$ArtifactDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,6 +20,13 @@ if ($Version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z]
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $artifactsRoot = Join-Path $repoRoot 'artifacts'
+if ($ArtifactDirectory) {
+    $artifactsRoot = [System.IO.Path]::GetFullPath($ArtifactDirectory, $repoRoot)
+    $allowedArtifacts = [System.IO.Path]::GetFullPath((Join-Path $repoRoot 'artifacts')) + [System.IO.Path]::DirectorySeparatorChar
+    if (!$artifactsRoot.StartsWith($allowedArtifacts, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Isolated packaging output must be a dedicated directory below repository artifacts.'
+    }
+}
 $publishRoot = Join-Path $artifactsRoot 'publish'
 $publishDir = Join-Path $publishRoot $Version
 $releaseRoot = Join-Path $artifactsRoot 'releases'
@@ -27,6 +35,19 @@ $project = Join-Path $repoRoot 'src\Launcher.App\Launcher.App.csproj'
 $solution = Join-Path $repoRoot 'MinecraftLauncher.sln'
 $mainExe = 'MinecraftLauncher.exe'
 $iconPath = Join-Path $repoRoot 'src\Launcher.App\Assets\Launcher.ico'
+
+# Validate exact absolute generated targets, including existing ancestors, before
+# the pre-existing cleanup step. An artifact-directory junction is not a workspace.
+foreach ($target in @($publishDir, $releaseDir)) {
+    $absolute = [System.IO.Path]::GetFullPath($target)
+    $boundary = [System.IO.Path]::GetFullPath((Join-Path $repoRoot 'artifacts')) + [System.IO.Path]::DirectorySeparatorChar
+    if (!$absolute.StartsWith($boundary, [System.StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe packaging cleanup target.' }
+    $entry = [System.IO.DirectoryInfo]::new($absolute)
+    while ($entry) {
+        if ($entry.Exists -and $entry.Attributes.HasFlag([System.IO.FileAttributes]::ReparsePoint)) { throw 'Linked packaging output is forbidden.' }
+        $entry = $entry.Parent
+    }
+}
 
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
     throw '.NET SDK 10 is required.'
@@ -110,6 +131,13 @@ try {
     if ($requiredArtifacts.Count -lt 4) {
         throw 'Velopack did not create Setup, full package, portable ZIP, and release index.'
     }
+
+    # The public Setup is our native GUI. The vendor Setup stays inside the pinned
+    # bundle/build workspace; it is never a second user-facing release artifact.
+    $bootstrapperOutput = @(& (Join-Path $repoRoot 'scripts\build-bootstrapper.ps1') -ReleaseDirectory $releaseDir -Version $Version -Channel $Channel)
+    $bootstrapper = $bootstrapperOutput[-1]
+    if (!(Test-Path -LiteralPath $bootstrapper -PathType Leaf)) { throw 'Native bootstrapper output is missing.' }
+    Copy-Item -LiteralPath $bootstrapper -Destination (Join-Path $releaseDir "lDiestrol.MinecraftLauncher-$Channel-Setup.exe") -Force
 
     $finalizeFeedScript = Join-Path $repoRoot 'scripts\finalize-github-release-feed.ps1'
     & $finalizeFeedScript -ReleaseDirectory $releaseDir -Version $Version -Channel $Channel

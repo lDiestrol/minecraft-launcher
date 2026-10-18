@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Launcher.Core.Tests", "test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Launcher.App.Tests", "tests\Launcher.App.Tests\Launcher.App.Tests.csproj", "{C2E629D7-79D1-4C9B-80F0-756267165996}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Launcher.InstallHelper", "src\Launcher.InstallHelper\Launcher.InstallHelper.csproj", "{CEBAA32A-3391-47E6-9B52-EEE40A67AFF9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,5 +41,12 @@ Global
 		{C2E629D7-79D1-4C9B-80F0-756267165996}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C2E629D7-79D1-4C9B-80F0-756267165996}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C2E629D7-79D1-4C9B-80F0-756267165996}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CEBAA32A-3391-47E6-9B52-EEE40A67AFF9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CEBAA32A-3391-47E6-9B52-EEE40A67AFF9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CEBAA32A-3391-47E6-9B52-EEE40A67AFF9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CEBAA32A-3391-47E6-9B52-EEE40A67AFF9}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
 	EndGlobalSection
 EndGlobal
