@@ -424,12 +424,25 @@ record evidence. При повреждении данных, неизвестн�
 Первым рекомендуется Open→Cancel до Install: минимальные ожидаемые side effects,
 проверка UI/exit1 и наблюдателя сохранности перед испытаниями с реальным Velopack.
 
+### Реальный Windows10 Extraction → Cancel E2E — 18.10.2026
+
+**PASS, только diagnostic extraction-only Cancel.** Данные основаны на выводах команд, предоставленных владельцем домашнего Windows10; в ходе документирования сами файлы Windows/evidence независимо не читались. Испытание выполнено из обычного PowerShell без elevation; elevated окно использовалось лишь для `Win32_ProcessStartTrace`.
+
+- PR #14 source `6496570dd2bc7ee2c413d7a85d0c7647ff758fbf`; [diagnostic Actions run](https://github.com/lDiestrol/minecraft-launcher/actions/runs/39108511220), artifact ID `12128499831`, EXE SHA256 `c5777163b3dcce7b3aa92c1460f216ab3b287cd6b1e28ea6fde97e59ee9df63c`.
+- Run ID `f49135e0697b462894a633d7f0013f27`, nonce `fa2ff2af84cf47c0887c037db9b497ec`, PID `19244`. `wait` сообщил BARRIER OBSERVED и `29985ms` остатка; владелец нажал GUI Cancel, окно закрылось. `verify` принял 8 последовательных событий (`verify_exit=0`); `gui_exit=1`.
+- Независимый WMI process-start observer проверен контрольным запуском `cmd.exe` (`trace_seen=True`); GUI PID найден, `gui_children=0`, InstallHelper/Setup/VendorProbe не обнаружены; MicrosoftEdgeUpdate из более раннего времени не относится к тесту. Observer остановлен (`TRACE STOPPED`).
+- Новый NTFS base: `App=False`, `GameData=False`, `.launcher-install=True`; evidence существует. Поиск файлов с именами intent/receipt/completion/storage-root.json в base: `records=0`. `diagnostic-profile` рядом с outer EXE не создан. SHA256 экспорта Uninstall-key `MinecraftLauncher.BootstrapperDiagnostic` до/после совпадает; другие HKCU keys не проверялись.
+- Предыдущие тестовые App, GameData и cancel-result.json существуют (3 × `True`); **побайтовое сравнение не проводилось**. Production GameData/worlds не проверялись. Никакого cleanup или повторной попытки на том же leaf не выполнялось.
+- Evidence сохранены в `%USERPROFILE%\LauncherE2ELab`: `evidence/trace-68b58c2611294f7faccbb15d1c63b2a5.csv`, `evidence/hkcu-before.reg`, `evidence/hkcu-after.reg`, `evidence/barrier-f49135e0697b462894a633d7f0013f27`, `runs/C/barrier-f49135e0697b462894a633d7f0013f27`.
+
+**Граница доказательства:** это Cancel во время extraction *до helper*, не installed GUI→helper→Coordinator→Setup E2E, не guarantee отсутствия любых процессов вне WMI наблюдения, не доказательство побайтовой сохранности старой/production GameData и не тест recovery. Все остальные Windows/release gates остаются открытыми. PR остаётся Draft.
+
 ### Будущий Extraction Barrier test
 
-Код подготовлен локально; Windows GUI/E2E, MSVC и новые packaged binaries в этой
-задаче не запускались/не создавались. Это инструкция для отдельно разрешённого
-будущего испытания. EXE `970588dc` **не поддерживает** новый флаг; потребуется отдельно
-разрешённая новая diagnostic сборка из reviewed source с точным source SHA/hash.
+Историческая инструкция от 17.10.2026: тогда Windows GUI/E2E и новая
+diagnostic packaging-сборка ещё не выполнялись. Реальный Cancel-тест
+18.10.2026 описан выше. EXE `970588dc` **не поддерживает** новый флаг;
+для выполненного теста использована отдельная diagnostic сборка source `6496570`.
 Package-diagnostic CI остаётся отключённым. Production EXE использовать нельзя.
 Контракт/гонка — [architecture.md](architecture.md#диагностический-extraction-cancel-barrier).
 
