@@ -80,7 +80,11 @@ void extractionBarrierChecks(const std::wstring& root, const std::wstring& sid, 
         }
         reportDiagnosticPhase("barrier mode " + std::to_string(mode) + ": control cancellation/continue");
         if (mode == 0 || mode == 5) {
-            SendMessageW(a.cancel, BM_CLICK, 0, 0); // Synthetic control activation: BN_CLICKED -> WM_COMMAND108 -> WM_CLOSE, not proof of a human click.
+            // Reject a fabricated WM_COMMAND carrying only the Cancel ID.
+            SendMessageW(window, WM_COMMAND, 108, 0);
+            require(!a.stop.load() && !a.closing);
+            SendMessageW(a.cancel, BM_CLICK, 0, 0); // BN_CLICKED -> WM_COMMAND108 -> WM_CLOSE; not proof of a human click.
+            require(a.stop.load() && a.closing);
             if (mode == 5) check(SetEvent(continuation.h)); // Observed Cancel must win over concurrent/pending Continue.
         } else if (mode == 1) SendMessageW(window, WM_CLOSE, 0, 0);
         else if (mode == 2) check(SetEvent(continuation.h));

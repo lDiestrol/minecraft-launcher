@@ -62,8 +62,12 @@ jobs:
             & "$bin/native-lifecycle-tests.exe" "$bin/native-tests.exe" "$root/lifecycle"
             if ($LASTEXITCODE -ne 0) { throw "Native $flavor lifecycle checks failed." }
           }
-          & ./artifacts/bootstrapper/native-diagnostic/diagnostic-tests.exe $fixture "$env:SystemDrive\LauncherDiagnosticCI-$([guid]::NewGuid().ToString('N'))"
-          if ($LASTEXITCODE -ne 0) { throw 'Early failure diagnostic checks failed.' }
+          # Independent runs expose cancellation/evidence races; no Setup.exe/helper is executed.
+          for ($iteration = 1; $iteration -le 4; $iteration++) {
+            Write-Host "Native diagnostic stress iteration $iteration / 4"
+            & ./artifacts/bootstrapper/native-diagnostic/diagnostic-tests.exe $fixture "$env:SystemDrive\LauncherDiagnosticCI-$iteration-$([guid]::NewGuid().ToString('N'))"
+            if ($LASTEXITCODE -ne 0) { throw "Diagnostic component stress iteration $iteration failed." }
+          }
 
   package-diagnostic:
     needs: build-and-test
