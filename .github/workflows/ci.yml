@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feat/v0.6.1
+      - feat/v061-gui-bootstrapper
   push:
     branches:
       - main
