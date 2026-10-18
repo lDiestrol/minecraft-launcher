@@ -53,11 +53,25 @@ internal static class DiagnosticSetupBarrier
         if (!createdNew) throw new IOException("Existing diagnostic barrier event rejected.");
         using Process current = Process.GetCurrentProcess();
         var identity = new { schemaVersion = 1, runId = id, pid = current.Id, startUtcTicks = current.StartTime.ToUniversalTime().Ticks };
-        WriteOnce(ready, new { identity.schemaVersion, identity.runId, hookPid = identity.pid, hookStartUtcTicks = identity.startUtcTicks,
-            eventName = @"Local\MinecraftLauncher.SetupHook." + id, state = "hook_entered", timeoutMs = (int)timeout.TotalMilliseconds });
+        WriteOnce(ready, new
+        {
+            identity.schemaVersion,
+            identity.runId,
+            hookPid = identity.pid,
+            hookStartUtcTicks = identity.startUtcTicks,
+            eventName = @"Local\MinecraftLauncher.SetupHook." + id,
+            state = "hook_entered",
+            timeoutMs = (int)timeout.TotalMilliseconds
+        });
         bool signaled = gate.WaitOne(timeout);
-        WriteOnce(signaled ? continued : timedOut, new { identity.schemaVersion, identity.runId, hookPid = identity.pid,
-            hookStartUtcTicks = identity.startUtcTicks, state = signaled ? "continued" : "timeout" });
+        WriteOnce(signaled ? continued : timedOut, new
+        {
+            identity.schemaVersion,
+            identity.runId,
+            hookPid = identity.pid,
+            hookStartUtcTicks = identity.startUtcTicks,
+            state = signaled ? "continued" : "timeout"
+        });
         if (!signaled) throw new TimeoutException("Diagnostic Setup hook did not receive Continue.");
     }
 
