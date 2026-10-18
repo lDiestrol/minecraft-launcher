@@ -1,5 +1,18 @@
 # Единый журнал Minecraft Launcher
 
+> Реальный Windows10 Extraction → Cancel E2E, 18.10.2026, ordinary user. **PASS для диагностической отмены во время распаковки; НЕ installed GUI→Setup E2E.**
+> Проверенный source `6496570dd2bc7ee2c413d7a85d0c7647ff758fbf` из [PR #14](https://github.com/lDiestrol/minecraft-launcher/pull/14) (Open/Draft).
+> Отдельный [diagnostic Actions run 39108511220](https://github.com/lDiestrol/minecraft-launcher/actions/runs/39108511220), artifact ID `12128499831`; EXE SHA256 `c5777163b3dcce7b3aa92c1460f216ab3b287cd6b1e28ea6fde97e59ee9df63c`.
+> Изолированный base/evidence под `%USERPROFILE%\LauncherE2ELab`, Run ID `f49135e0697b462894a633d7f0013f27`, nonce `fa2ff2af84cf47c0887c037db9b497ec`, GUI PID `19244`.
+> `wait`: BARRIER OBSERVED с остатком `29985ms`; владелец вручную нажал Cancel и GUI закрылся. `verify` подтвердил полную 8-event цепочку (`verify_exit=0`), GUI завершился `exit1`.
+> Независимый elevated `Win32_ProcessStartTrace` предварительно проверен контрольным `cmd.exe` (`trace_seen=True`). GUI PID обнаружен; `gui_children=0`; InstallHelper/Setup/VendorProbe в trace не обнаружены. Observer штатно остановлен (`TRACE STOPPED`).
+> Новый base: `App=False`, `GameData=False`, `.launcher-install=True`, evidence leaf присутствует; поиск file names intent/receipt/completion/storage-root.json дал `records=0`; соседний `diagnostic-profile` отсутствует.
+> Export до/после **только** ключа `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\MinecraftLauncher.BootstrapperDiagnostic` дал совпадающие SHA256.
+> Прежние тестовые App/GameData и старый `cancel-result.json` существуют (`True/True/True`). Их contents/hashes до/после не сравнивались; неизменность production GameData/worlds и всей HKCU **не доказана**.
+> Сохранены без cleanup: `evidence/trace-68b58c2611294f7faccbb15d1c63b2a5.csv`, `evidence/hkcu-before.reg`, `evidence/hkcu-after.reg`, `evidence/barrier-f49135e0697b462894a633d7f0013f27`, `runs/C/barrier-f49135e0697b462894a633d7f0013f27` (все относительно `%USERPROFILE%\LauncherE2ELab`).
+> Ограничения: process-start observer фиксирует наблюдённые старты, не все возможные процессы; полный installed GUI→helper→Coordinator→Setup, recovery/update, FAT/exFAT, cross-user ACL, DPI остаются открытыми gates. Нет merge/tag/release. Подробности — [releasing.md](releasing.md#реальный-windows10-extraction--cancel-e2e--18102026).
+> Далее — исторический snapshot предыдущей validation-сессии.
+
 > Extraction Barrier v2 — Validation, Commit & Push, снимок 18.10.2026 (UTC+05:00).
 > Исходная/итоговая ветка `feat/v061-gui-bootstrapper`; исходный HEAD
 > `7fe5791b22b40b2da52a81b119ffe2c18918a8e8`. Preflight подтвердил ровно 12 ожидаемых
