@@ -45,6 +45,10 @@ jobs:
       - name: Test static diagnostic artifact verifier
         run: python -B -m unittest discover -s tests -p DiagnosticArtifactTests.py
 
+      - name: Setup Hook E2E harness static safety tests (no installer execution)
+        shell: pwsh
+        run: ./tests/SetupHookHarnessTests.ps1
+
       - name: Native safety, diagnostics and GUI component tests (no packaging)
         shell: pwsh
         run: |
