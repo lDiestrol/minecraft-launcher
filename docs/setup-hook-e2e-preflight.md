@@ -13,9 +13,9 @@ The witness is in `scripts/setup-hook-e2e-harness.ps1`. Its two modes are `Prepa
 
 ## Required human checks before any live test
 
-Before proceeding to Windows11TEST, independently confirm VMID 103, usable PBS backup/snapshot, isolation of target App and GameData, and that no other diagnostic installation or active installer exists. Computer name checking is not cryptographic VM attestation. Do not touch AWG, RDP, networking, production launcher, real GameData, or other installer Jobs.
+Before proceeding to Proxmox VM **103**, named `Windows11TEST` in PVE, independently confirm the VM and its usable PBS backup/snapshot, isolation of target App and GameData, and that no other diagnostic installation or active installer exists. The **actual Windows hostname is `DESKTOP-HUC2CMF`**, not `Windows11TEST`. The guest SMBIOS UUID **`a06e6a51-dbad-46bb-856d-c006f38896dd`** was separately observed both in `qm config 103` and via `Get-CimInstance Win32_ComputerSystemProduct`. The harness requires BOTH the pinned hostname and UUID from CIM before reading the diagnostic artifact. Hostname or SMBIOS UUID alone is not cryptographic host attestation; cloned/spoofed SMBIOS data and stale PBS copies remain outside its proof. Do not touch AWG, RDP, networking, production launcher, real GameData, or other installer Jobs.
 
-Use Windows PowerShell 7 (`pwsh`) under a **non-elevated** account on computer `Windows11TEST`. Provide pre-existing, separate folders for evidence and reports inside an explicitly reviewed private parent. The **owner must equal the current SID**, with a protected DACL allowing only the user, SYSTEM and Administrators; no reparse ancestors or removable/UNC drives. This tool never creates those directories or changes ACLs. `Prepare` requires empty evidence/report folders and no diagnostic HKCU uninstall registration.
+Use Windows PowerShell 7 (`pwsh`) under a **non-elevated** account inside PVE `Windows11TEST`, whose Windows computer name is `DESKTOP-HUC2CMF`. Provide pre-existing, separate folders for evidence and reports inside an explicitly reviewed private parent. The **owner must equal the current SID**, with a protected DACL allowing only the user, SYSTEM and Administrators; no reparse ancestors or removable/UNC drives. This tool never creates those directories or changes ACLs. `Prepare` requires empty evidence/report folders and no diagnostic HKCU uninstall registration.
 
 Example future **data-only** preflight command after manual preparation (not approval to launch EXE):
 
@@ -23,7 +23,7 @@ Example future **data-only** preflight command after manual preparation (not app
 pwsh -NoProfile -File .\scripts\setup-hook-e2e-harness.ps1 -Mode Prepare -ArtifactDirectory 'C:\SetupHookLab\private\artifact' -EvidenceRoot 'C:\SetupHookLab\private\evidence' -ReportDirectory 'C:\SetupHookLab\private\reports'
 ```
 
-Each successful invocation writes only one new UTF-8 JSON report via `FileMode.CreateNew` in the approved private report directory, never modifies an existing receipt or registration. Failures leave the state unchanged.
+Each successful invocation writes only one new UTF-8 JSON report via `FileMode.CreateNew` in the approved private report directory, never modifies an existing receipt or registration. The report records the guest SMBIOS UUID and expected PVE VMID as provenance **claims, not remote PVE attestation**. `Prepare` requires an empty report folder: use a fresh report folder instead of the Work investigation folder that already contains `REPORT.md` and `result.json`. Failures leave the state unchanged.
 
 ## Observer contract (only after *separate* live-install permission)
 

@@ -5,7 +5,7 @@ param(
     [Parameter(Mandatory)][string]$ArtifactDirectory,
     [Parameter(Mandatory)][string]$EvidenceRoot,
     [Parameter(Mandatory)][string]$ReportDirectory,
-    [string]$ExpectedComputerName = 'Windows11TEST',
+    [string]$ExpectedComputerName = 'DESKTOP-HUC2CMF',
     [string]$RunId,
     [int]$SetupPid,
     [long]$SetupStartUtcTicks,
@@ -17,6 +17,10 @@ $PinnedSource = '33f3b5831dfa261949e637332ba44e40249c8ec8'
 $PinnedWorkflow = 'de75ddafcb8bc2fdf2537b65ccb6da478c647a56'
 $PinnedSha256 = '478f775109bcd49e7fb7811adef54cba6e7137cbd3d3fa798331b8d30003acaa'
 $DiagnosticPack = 'MinecraftLauncher.BootstrapperDiagnostic'
+# Proxmox VM 103 identity, confirmed independently with 'qm config 103' and Win32_ComputerSystemProduct.
+# Both the Windows hostname and guest SMBIOS UUID are pinned: caller-supplied overrides cannot redirect the witness.
+$PinnedWindowsHostname = 'DESKTOP-HUC2CMF'
+$PinnedVmUuid = [guid]'a06e6a51-dbad-46bb-856d-c006f38896dd'
 $Registration = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\MinecraftLauncher.BootstrapperDiagnostic'
 function Require([bool]$Ok,[string]$Reason) { if (-not $Ok) { throw "PRECHECK REJECTED: $Reason" } }
 function LocalPath([string]$Path,[string]$Description,[bool]$Directory) {
@@ -80,7 +84,14 @@ function NewRecord([string]$Folder,[hashtable]$Data) {
 }
 
 Require ($PSVersionTable.PSVersion.Major -ge 7 -and $IsWindows) 'PowerShell 7 on Windows required'
-Require ($ExpectedComputerName -ieq 'Windows11TEST' -and $env:COMPUTERNAME -ieq $ExpectedComputerName) 'Witness limited to Windows11TEST'
+# Proxmox display name Windows11TEST is not the Windows hostname.
+Require ($ExpectedComputerName -ieq $PinnedWindowsHostname) 'Witness computer name override rejected'
+$machine = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+$product = Get-CimInstance -ClassName Win32_ComputerSystemProduct -ErrorAction Stop
+Require ($machine.Name -ieq $PinnedWindowsHostname -and $env:COMPUTERNAME -ieq $PinnedWindowsHostname) 'Unexpected Windows hostname'
+$actualVmUuid = [guid]::Empty
+Require ([guid]::TryParse([string]$product.UUID, [ref]$actualVmUuid)) 'Guest SMBIOS UUID missing or malformed'
+Require ($actualVmUuid -eq $PinnedVmUuid) 'SMBIOS UUID differs from Proxmox VM 103; refusing operation'
 $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 Require (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) 'Use a non-elevated Windows user'
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
@@ -118,7 +129,8 @@ $verified = ($verifiedOutput | Out-String) | ConvertFrom-Json -ErrorAction Stop
 Require ($verified.sha256 -ceq $PinnedSha256 -and $verified.packId -ceq $DiagnosticPack) 'Static verifier identity mismatch'
 
 $existing = Test-Path -LiteralPath $Registration
-$record = @{ schemaVersion=1; utc=[DateTime]::UtcNow.ToString('O'); mode=$Mode; machine=$env:COMPUTERNAME;
+$record = @{ schemaVersion=1; utc=[DateTime]::UtcNow.ToString('O'); mode=$Mode; machine=$machine.Name;
+    pveVmIdExpected=103; guestSmbiosUuid=$actualVmUuid.ToString('D'); guestUuidSource='Win32_ComputerSystemProduct.UUID';
     sourceCommit=$PinnedSource; workflowCommit=$PinnedWorkflow; sha256=$PinnedSha256;
     staticArtifactVerified=$true; harnessLaunchedSetup=$false;
     diagnosticRegistrationPresent=[bool]$existing; result='INCONCLUSIVE'; details=@{} }

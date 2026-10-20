@@ -8,7 +8,9 @@ if ($parseErrors.Count -gt 0) { throw "Harness parser errors: $($parseErrors | O
 $content = Get-Content -LiteralPath $script -Raw
 foreach ($token in @('PREPARED_NOT_EXECUTED','INCONCLUSIVE_OBSERVATION','PrivateDirectory','LiveIdentity',
  'setup-hook-ready-','setup-hook-continued-','setup-hook-timeout-','AreAccessRulesProtected','GetOwnerSid',
- 'FileMode]::CreateNew','verify-diagnostic-artifact.py','33f3b5831dfa261949e637332ba44e40249c8ec8')) {
+ 'FileMode]::CreateNew','verify-diagnostic-artifact.py','33f3b5831dfa261949e637332ba44e40249c8ec8',
+ 'DESKTOP-HUC2CMF','a06e6a51-dbad-46bb-856d-c006f38896dd','Win32_ComputerSystemProduct',
+ 'TryParse','SMBIOS UUID differs from Proxmox VM 103')) {
     if (-not $content.Contains($token)) { throw "Missing fail-closed invariant: $token" }
 }
 foreach ($token in @('Start-Process','Stop-Process','TerminateProcess','SetEvent(', 'OpenEvent(',
@@ -24,6 +26,13 @@ try {
     } catch { $rejected = $true }
     if (-not $rejected) { throw 'Harness accepted an invalid runner or invalid diagnostic artifact' }
     if (@(Get-ChildItem -LiteralPath $root -Force).Count -gt 0) { throw 'Rejected attempt wrote evidence' }
+    # Even supplying the correct hostname must not authorize a different VM/runner.
+    $rejected = $false
+    try {
+        & $script -Mode Prepare -ArtifactDirectory $root -EvidenceRoot $root -ReportDirectory $root -ExpectedComputerName 'DESKTOP-HUC2CMF' *> $null
+    } catch { $rejected = $true }
+    if (-not $rejected) { throw 'Harness accepted another host without matching SMBIOS UUID and artifacts' }
+    if (@(Get-ChildItem -LiteralPath $root -Force).Count -gt 0) { throw 'Rejected identity attempt wrote evidence' }
 } finally {
     Remove-Item -LiteralPath $root -Recurse -Force
 }
