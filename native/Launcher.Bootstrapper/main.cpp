@@ -86,7 +86,15 @@ struct app {
         if (workerDone) DestroyWindow(window);
         else {
             if (!SetTimer(window, 2, 20, nullptr)) ExitProcess(static_cast<UINT>(outcome.code));
-            if (worker.joinable()) CancelSynchronousIo(worker.native_handle());
+            if (worker.joinable()) {
+#ifdef INSTALLER_DIAGNOSTIC
+                // Extraction-only barrier uses cancelEvent to wake the worker. Do not cancel
+                // synchronous evidence I/O while immutable cancellation receipts are written.
+                // Normal diagnostic installs and production retain the existing I/O cancellation.
+                if (!barrier)
+#endif
+                    CancelSynchronousIo(worker.native_handle());
+            }
         }
     }
     void screenshot(evidenceFile file) noexcept {
@@ -350,7 +358,12 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
             }
             if (LOWORD(w) == 108) {
 #ifdef INSTALLER_DIAGNOSTIC
-                if (a->barrier && a->running && HIWORD(w) == BN_CLICKED && reinterpret_cast<HWND>(l) == a->cancel) a->barrier->cancelButton();
+                if (a->barrier && a->running) {
+                    // In extraction-barrier mode, an ID-only command cannot impersonate Cancel.
+                    // This proves only the control notification, not a physical human click.
+                    if (HIWORD(w) != BN_CLICKED || reinterpret_cast<HWND>(l) != a->cancel) return 0;
+                    a->barrier->cancelButton();
+                }
 #endif
                 SendMessageW(window, WM_CLOSE, 0, 0); return 0;
             } break;

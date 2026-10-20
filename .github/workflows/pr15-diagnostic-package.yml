@@ -1,0 +1,106 @@
+name: PR15 one-time verified diagnostic packaging
+
+on:
+  push:
+    branches:
+      - test/v061-diagnostic-setup-hook-barrier
+    paths:
+      - .github/workflows/pr15-diagnostic-package.yml
+
+permissions:
+  contents: read
+
+jobs:
+  package-diagnostic-pr15:
+    if: >-
+      github.repository == 'lDiestrol/minecraft-launcher' &&
+      github.ref == 'refs/heads/test/v061-diagnostic-setup-hook-barrier' &&
+      github.event.before == 'e77531219c170592a30140fbc72697eba8644d0f' &&
+      github.event.head_commit.message == 'ci: one-time verified diagnostic packaging for PR #15'
+    runs-on: windows-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PINNED_SOURCE_COMMIT: e77531219c170592a30140fbc72697eba8644d0f
+
+    steps:
+      - name: Checkout exact verified PR15 commit (not the workflow commit)
+        uses: actions/checkout@v7
+        with:
+          ref: e77531219c170592a30140fbc72697eba8644d0f
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Verify immutable source and Diagnostic-only toolchain
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git rev-parse HEAD).Trim() -cne $env:PINNED_SOURCE_COMMIT) { throw 'Pinned commit mismatch.' }
+          if ((git status --porcelain).Count -gt 0) { throw 'Checkout is not clean.' }
+          $toolManifest = Get-Content .config/dotnet-tools.json -Raw | ConvertFrom-Json
+          if ($toolManifest.tools.vpk.version -cne '1.2.161' -or $toolManifest.tools.vpk.rollForward) { throw 'Unpinned vpk.' }
+          foreach ($project in @('src/Launcher.Infrastructure/Launcher.Infrastructure.csproj', 'tools/Launcher.InstallerDiagnosticHost/Launcher.InstallerDiagnosticHost.csproj')) {
+            [xml]$xml = Get-Content -LiteralPath $project -Raw
+            $references = @($xml.SelectNodes("/Project/ItemGroup/PackageReference[@Include='Velopack']"))
+            if ($references.Count -ne 1 -or $references[0].GetAttribute('Version') -cne '1.2.161') { throw "Unexpected SDK: $project" }
+          }
+          if (!(Select-String -LiteralPath tools/Launcher.InstallerDiagnosticHost/Program.cs -Pattern 'OnAfterInstallFastCallback' -Quiet)) { throw 'Diagnostic install hook missing.' }
+          Write-Output "PINNED_SOURCE_COMMIT=$env:PINNED_SOURCE_COMMIT"
+
+      - name: Verify static artifact verifier unit tests
+        run: |
+          python -B -m unittest discover -s tests -p DiagnosticArtifactTests.py
+          if ($LASTEXITCODE -ne 0) { throw 'Static verifier tests failed.' }
+
+      - name: Package and statically verify Diagnostic only (do not execute Setup)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = @(& ./scripts/package-diagnostic-bootstrapper.ps1)
+          if ($LASTEXITCODE -ne 0 -or $output.Count -eq 0) { throw 'Diagnostic package step failed.' }
+          $bundle = [string]$output[-1]
+          if (!(Test-Path -LiteralPath $bundle -PathType Leaf)) { throw 'Diagnostic bundle missing.' }
+          $checksums = Join-Path (Split-Path -Parent $bundle) 'SHA256SUMS.txt'
+          if (!(Test-Path -LiteralPath $checksums -PathType Leaf)) { throw 'Checksums missing.' }
+          $stub = Join-Path $PWD 'artifacts/bootstrapper/native-diagnostic/bootstrapper.exe'
+          python ./scripts/verify-diagnostic-artifact.py --bundle $bundle --checksums $checksums --stub $stub
+          if ($LASTEXITCODE -ne 0) { throw 'Static Diagnostic bundle verification failed.' }
+          $staging = Join-Path $PWD 'artifacts/diagnostic-pr15'
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+          $dest = Join-Path $staging 'MinecraftLauncher-Setup.exe'
+          Copy-Item -LiteralPath $bundle -Destination $dest
+          Copy-Item -LiteralPath $checksums -Destination (Join-Path $staging 'SHA256SUMS.txt')
+          python ./scripts/verify-diagnostic-artifact.py --bundle $dest --checksums (Join-Path $staging 'SHA256SUMS.txt') --stub $stub
+          if ($LASTEXITCODE -ne 0) { throw 'Staged Diagnostic bundle verification failed.' }
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $dest).Hash.ToLowerInvariant()
+          $info = [ordered]@{
+            sourceCommit = $env:PINNED_SOURCE_COMMIT
+            workflowCommit = $env:GITHUB_SHA
+            ciBaseline = 'https://github.com/lDiestrol/minecraft-launcher/actions/runs/39159553517'
+            packId = 'MinecraftLauncher.BootstrapperDiagnostic'
+            mainExe = 'VendorProbe.exe'
+            version = '0.0.1'
+            channel = 'dev'
+            velopackVersion = '1.2.161'
+            setupSha256 = $hash
+            runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            executed = $false
+          }
+          $info | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $staging 'build-info.json') -Encoding utf8
+          "Pinned diagnostic commit: $env:PINNED_SOURCE_COMMIT`nSHA-256: $hash`nStatic verification: PASS`nSetup execution: NOT PERFORMED" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload verified Diagnostic bundle (artifact only, no release)
+        uses: actions/upload-artifact@v6
+        with:
+          name: pr15-diagnostic-pinned-e77531219c17
+          path: |
+            artifacts/diagnostic-pr15/MinecraftLauncher-Setup.exe
+            artifacts/diagnostic-pr15/SHA256SUMS.txt
+            artifacts/diagnostic-pr15/build-info.json
+          if-no-files-found: error
+          retention-days: 7

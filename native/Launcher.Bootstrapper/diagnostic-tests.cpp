@@ -80,7 +80,11 @@ void extractionBarrierChecks(const std::wstring& root, const std::wstring& sid, 
         }
         reportDiagnosticPhase("barrier mode " + std::to_string(mode) + ": control cancellation/continue");
         if (mode == 0 || mode == 5) {
-            SendMessageW(a.cancel, BM_CLICK, 0, 0); // Synthetic control activation: BN_CLICKED -> WM_COMMAND108 -> WM_CLOSE, not proof of a human click.
+            // Reject a fabricated WM_COMMAND carrying only the Cancel ID.
+            SendMessageW(window, WM_COMMAND, 108, 0);
+            require(!a.stop.load() && !a.closing);
+            SendMessageW(a.cancel, BM_CLICK, 0, 0); // BN_CLICKED -> WM_COMMAND108 -> WM_CLOSE; not proof of a human click.
+            require(a.stop.load() && a.closing);
             if (mode == 5) check(SetEvent(continuation.h)); // Observed Cancel must win over concurrent/pending Continue.
         } else if (mode == 1) SendMessageW(window, WM_CLOSE, 0, 0);
         else if (mode == 2) check(SetEvent(continuation.h));
@@ -91,10 +95,43 @@ void extractionBarrierChecks(const std::wstring& root, const std::wstring& sid, 
         require(!a.input.valid()); require(a.log.empty()); require(a.outcome.code == 1);
         require(!std::filesystem::exists(a.base + L"\\App")); require(!std::filesystem::exists(a.base + L"\\GameData"));
         require(!std::filesystem::exists(a.localData));
-        auto fifth = json::wide(contents(evidence + L"\\extraction-05.json")); auto fields = json::parser(fifth).read();
-        require(json::text(fields, L"event") == ((mode == 0 || mode == 5) ? L"gui_cancel" : mode == 2 ? L"barrier_continue" : L"barrier_failed"));
-        auto last = json::wide(contents(evidence + ((mode == 0 || mode == 5) ? L"\\extraction-08.json" : L"\\extraction-07.json")));
-        require(json::text(json::parser(last).read(), L"event") == L"helper_not_started");
+        try {
+            auto fifth = json::wide(contents(evidence + L"\\extraction-05.json")); auto fields = json::parser(fifth).read();
+            require(json::text(fields, L"event") == ((mode == 0 || mode == 5) ? L"gui_cancel" : mode == 2 ? L"barrier_continue" : L"barrier_failed"));
+            auto last = json::wide(contents(evidence + ((mode == 0 || mode == 5) ? L"\\extraction-08.json" : L"\\extraction-07.json")));
+            require(json::text(json::parser(last).read(), L"event") == L"helper_not_started");
+        } catch (const std::exception& error) {
+            // Test-only, bounded diagnostic snapshot. Read fixed evidence filenames only; never modify a receipt.
+            // This identifies missing phases and a missed synthetic BN_CLICKED without weakening assertions.
+            std::cerr << "Barrier journal verification failed: mode=" << mode << ", error=" << error.what()
+                      << ", stop=" << a.stop.load() << ", shutdown=" << a.shutdown.load()
+                      << ", running=" << a.running << ", closing=" << a.closing
+                      << ", workerDone=" << a.workerDone.load() << ", outcome=" << a.outcome.code << '\n';
+            for (int sequence = 1; sequence <= 10; ++sequence) {
+                std::wstring name = L"extraction-" + std::wstring(sequence < 10 ? L"0" : L"") + std::to_wstring(sequence) + L".json";
+                std::wstring path = evidence + L"\\" + name;
+                DWORD attrs = GetFileAttributesW(path.c_str());
+                if (attrs == INVALID_FILE_ATTRIBUTES) {
+                    DWORD status = GetLastError();
+                    std::cerr << "  extraction-" << sequence << ": absent (win32=" << status << ")\n";
+                    continue;
+                }
+                try {
+                    auto file = readFile(path); auto size = length(file.h);
+                    if (size == 0 || size > 16384) {
+                        std::cerr << "  extraction-" << sequence << ": invalid size=" << size << '\n';
+                        continue;
+                    }
+                    std::string bytes(static_cast<size_t>(size), '\0');
+                    readExact(file.h, bytes.data(), static_cast<DWORD>(size));
+                    auto fields = json::parser(json::wide(bytes)).read();
+                    std::cerr << "  extraction-" << sequence << ": " << json::utf8(json::text(fields, L"event")) << '\n';
+                } catch (const std::exception& readError) {
+                    std::cerr << "  extraction-" << sequence << ": unreadable (" << readError.what() << ")\n";
+                }
+            }
+            throw;
+        }
         // WM_CLOSE may already destroy the window if the worker finishes before requestClose checks it.
         if (IsWindow(window)) DestroyWindow(window);
         MSG pending{}; while (PeekMessageW(&pending, nullptr, 0, 0, PM_REMOVE)) {
