@@ -188,6 +188,15 @@ public sealed class StorageRootSafetyTests
         Assert.Contains(logger.Lines, line => line.Contains("environment marker", StringComparison.Ordinal));
         Assert.Contains(logger.Lines, line => line.Contains(directory.Path, StringComparison.Ordinal));
         Assert.Contains(logger.Errors, line => line.Contains("stderr-marker", StringComparison.Ordinal));
+        // Root exit and pipe EOF do not mean every associated process (for example
+        // conhost.exe) has exited. A deadline reports failure, never an assumed zero.
+        long emptyWait = Stopwatch.GetTimestamp();
+        while (job.ActiveProcesses != 0 && Stopwatch.GetElapsedTime(emptyWait) < TimeSpan.FromSeconds(2))
+        {
+            await Task.Delay(5);
+        }
+        uint remaining = job.ActiveProcesses;
+        Assert.True(remaining == 0, $"Job not empty after root exit/output completion: root={process.Id}, birth={process.StartTimeUtc:o}, active={remaining}.");
         Assert.Equal(0u, job.ActiveProcesses);
     }
 

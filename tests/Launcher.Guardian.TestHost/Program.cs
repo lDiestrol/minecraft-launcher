@@ -2,6 +2,11 @@ using Launcher.Infrastructure.Game;
 using Launcher.Infrastructure.Logging;
 using Launcher.Infrastructure.Persistence;
 
+if (args[0] is "guardian-lifecycle-root" or "guardian-lifecycle-child" or "guardian-lifecycle-exit")
+{
+    return await GuardianLifecycleHost.RunAsync(args);
+}
+
 // Isolated test process only; never part of the Launcher CLI or release packaging.
 if (args[0] is "install-owner" or "install-writer")
 {

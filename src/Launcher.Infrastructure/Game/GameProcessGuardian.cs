@@ -68,7 +68,8 @@ public static class GameProcessGuardian
         Func<Task>? afterCancellationDecision = null,
         Func<Process, Task>? afterProcessStart = null,
         Func<Task>? afterIntent = null,
-        Func<Task>? afterState = null)
+        Func<Task>? afterState = null,
+        Func<WindowsGameJob, uint>? activeProcessQuery = null)
     {
         string fullRequestPath = ValidateRequestPath(paths, requestPath);
         string statusPath = GetStatusPath(fullRequestPath);
@@ -172,7 +173,7 @@ public static class GameProcessGuardian
 
                 await process.WaitForExitAsync();
                 int exitCode = process.ExitCode;
-                await WaitForEmptyJobAsync(job);
+                await WaitForEmptyJobAsync(job, logger, activeProcessQuery);
                 activity.DeleteState(request.ProfileId, request.OwnershipToken);
                 TryWriteStatus(statusPath, new GameGuardianStatus(
                     CurrentSchemaVersion,
@@ -187,17 +188,16 @@ public static class GameProcessGuardian
             }
             catch (Exception exception)
             {
-                logger.Error("Game guardian failed.", exception);
-                if (started && !process.HasExited)
+                TryLogError(logger, "Game guardian failed.", exception);
+                if (started || process.Id != 0)
                 {
-                    logger.Info("Guardian will keep the profile lock until Minecraft exits after a guardian error.");
                     try
                     {
                         await process.WaitForExitAsync();
                     }
                     catch (Exception waitException)
                     {
-                        logger.Error("Guardian could not observe Minecraft exit.", waitException);
+                        TryLogError(logger, "Guardian could not observe Minecraft exit.", waitException);
                     }
                 }
 
@@ -206,13 +206,13 @@ public static class GameProcessGuardian
                 {
                     if (job is not null)
                     {
-                        await WaitForEmptyJobAsync(job);
+                        await WaitForEmptyJobAsync(job, logger, activeProcessQuery);
                         activity.DeleteState(request.ProfileId, request.OwnershipToken);
                     }
                 }
                 catch (Exception recoveryException)
                 {
-                    logger.Error("Guardian retained its launch intent: game job exit could not be proven.", recoveryException);
+                    TryLogError(logger, "Guardian retained its launch intent: game job exit could not be proven.", recoveryException);
                 }
                 TryWriteStatus(statusPath, new GameGuardianStatus(
                     CurrentSchemaVersion,
@@ -231,11 +231,73 @@ public static class GameProcessGuardian
         }
     }
 
-    private static async Task WaitForEmptyJobAsync(WindowsGameJob job)
+    private static async Task WaitForEmptyJobAsync(WindowsGameJob job, IAppLogger logger, Func<WindowsGameJob, uint>? query = null)
     {
-        while (job.ActiveProcesses != 0)
+        JobQueryFailureLog failureLog = new(logger);
+        while (true)
         {
+            try
+            {
+                uint active = query is null ? job.ActiveProcesses : query(job);
+                failureLog.RecordRecovery();
+                if (active == 0)
+                {
+                    return;
+                }
+            }
+            catch (Exception exception)
+            {
+                // Unknown is not empty. Keep ownership and the live Job handle even
+                // if querying or diagnostic logging fails; there is no unlock timeout.
+                failureLog.RecordFailure(exception, Stopwatch.GetTimestamp());
+            }
+
             await Task.Delay(100);
+        }
+    }
+
+    private static void TryLogError(IAppLogger logger, string message, Exception exception)
+    {
+        try { logger.Error(message, exception); }
+        catch (Exception) { /* Logging must not bypass the Job-empty ownership barrier. */ }
+    }
+
+    internal sealed class JobQueryFailureLog(IAppLogger logger)
+    {
+        private long _failures;
+        private long _reports;
+        private long _lastReportTimestamp;
+
+        internal void RecordFailure(Exception exception, long timestamp)
+        {
+            _failures++;
+            // Aggregate the entire outage, even if the native error changes. Neither
+            // repeated errors nor a broken logger should create a 100-ms log loop.
+            if (_failures == 1 || Stopwatch.GetElapsedTime(_lastReportTimestamp, timestamp) >= TimeSpan.FromMinutes(1))
+            {
+                _lastReportTimestamp = timestamp;
+                _reports++;
+                TryLogError(logger,
+                    $"Cannot query game Job; retaining profile ownership and retrying. " +
+                    $"Failed queries={_failures}; suppressed reports={_failures - _reports}.", exception);
+            }
+        }
+
+        internal void RecordRecovery()
+        {
+            if (_failures == 0)
+            {
+                return;
+            }
+
+            try
+            {
+                logger.Info($"Game Job query recovered. Failed queries={_failures}; suppressed reports={_failures - _reports}.");
+            }
+            catch (Exception) { /* Recovery logging is not proof of Job-empty. */ }
+
+            _failures = 0;
+            _reports = 0;
         }
     }
 

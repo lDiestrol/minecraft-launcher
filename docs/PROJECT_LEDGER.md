@@ -38,6 +38,61 @@
 > результаты и реальные границы vendor fault-injection — раздел 12 ниже.
 > Владелец разрешил отдельный fix commit и обычный push для повторного review, не merge.
 
+## Guardian Lifecycle — публикация для Draft review, 01.11.2026
+
+Владелец разрешил один тематический commit, обычный push ветки
+`fix/guardian-job-lifecycle` и один Draft PR в `feat/v0.6.1`.
+Публикуемый scope: Guardian Job-empty/ownership barrier, ограничение повторных
+query logs, Atomic assertion, portable tests и связанные документы.
+Native SDK/updater, R01-кандидатура и VM-specific probes в этот patch не входят.
+
+Фактическая история публикации и текущий commit определяются
+[историей ветки](https://github.com/lDiestrol/minecraft-launcher/commits/fix/guardian-job-lifecycle),
+а номер и статус Draft PR —
+[PR этой ветки](https://github.com/lDiestrol/minecraft-launcher/pulls?q=is%3Apr+head%3Afix%2Fguardian-job-lifecycle).
+Ниже сохранён исторический снимок квалификации **до публикации**; его исходный HEAD
+и отсутствие commit/PR относятся только к тому моменту.
+
+READY_FOR_PR_REVIEW не означает CI PASS или READY_FOR_RELEASE. Локальный filtered
+regression остаётся 520 PASS / 7 FAIL / 1 skip; SDK 17 cases не повторялись.
+Текущий CI workflow настроен на main, а package workflow — на ручной запуск:
+отсутствие Actions для PR в feat/v0.6.1 нельзя считать успешной CI-проверкой.
+Независимый review обязателен; merge/release и R02 этим разрешением не предусмотрены.
+
+## R01.2.7 — историческая квалификация до публикации, 01.11.2026
+
+Локальная ветка `fix/guardian-job-lifecycle` от свежей
+[feat/v0.6.1](https://github.com/lDiestrol/minecraft-launcher/tree/feat/v0.6.1),
+HEAD `9c4f5cfe31aecedd7d8a2eba603e1bcf2951f8a7`; main `bd98ecd721298981508d54466d11089c1647ab4f`.
+На момент этой исторической квалификации commit/push/PR ещё не выполнялись.
+R01-кандидатура и historical evidence были сохранены.
+
+Job query unknown удерживает физическую ownership до подтверждённого Job-empty
+в success/recovery; hProcess не закрывается преждевременно. Повторные query errors
+агрегируются: первая сразу, затем не чаще раза в минуту в непрерывном эпизоде,
+при восстановлении — число всех ошибок/подавленных сообщений. Logger fault
+не снимает barrier. Постоянный отказ оставляет ownership занятой без unlock-timeout.
+AtomicJobProcess и WindowsGameJob не менялись; Atomic assertion ждёт настоящий ноль
+с диагностическим FAIL по deadline. VM-specific probes не перенесены.
+
+Restore/build/format verify PASS. Portable targeted **15/15**, Atomic targeted **1/1**
+прошли в отдельной ветке и в независимой R01 qualification-копии с теми же source SHA.
+Один заключительный filtered regression R01 + финальный Guardian: **520 PASS /
+7 FAIL / 1 skip**, общий test exit 1 сохранён. Семь baseline
+symlink failures полностью совпали; новых failures: 0.
+17 неизменённых ранее квалифицированных StrictUpdaterTests исключены; это не unfiltered full suite.
+SDK/native/packaging не повторялись. Час synthetic query failures проверен без реального
+часового ожидания: 36000 failures дают 60 error attempts и один recovery summary.
+Fixture ready имеет monotonic deadline 10s; timeout даёт FAIL с PID/birth/spawn/Job
+диагностикой, не успешность после sleep и не unlock.
+
+Итог **READY_FOR_PR_REVIEW**, не READY_FOR_RELEASE. Независимый review перед интеграцией;
+неизвестное состояние Job удерживается бесконечно. Поломанный logger не гарантирует
+сохранение recovery сообщения; safety barrier от записи лога не зависит.
+Новые outage episodes/flapping могут давать больше сообщений, чем один непрерывный отказ.
+Crash/witness recovery policy не менялась. User Minecraft, installed update/uninstall/Recovery,
+UAC, network/VPN/PBS не затрагивались. R02 не начинался; работа остановлена.
+
 ## 1. Назначение и источник состояния
 
 Minecraft Launcher — публичный Windows x64 клиент на .NET 10 / WPF / MVVM.
